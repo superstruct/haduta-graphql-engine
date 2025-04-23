@@ -17,8 +17,7 @@
 )]
 #[serde(rename_all = "snake_case")]
 pub enum UnstableFeature {
-    EnableOrderByExpressions,
-    EnableNdcV02Support,
+    EnableAggregationPredicates,
 }
 
 pub fn resolve_unstable_features(
@@ -28,14 +27,10 @@ pub fn resolve_unstable_features(
 
     for unstable_feature in unstable_features {
         match unstable_feature {
-            UnstableFeature::EnableOrderByExpressions => {
-                features.enable_order_by_expressions = true;
-            }
-            UnstableFeature::EnableNdcV02Support => {
-                features.enable_ndc_v02_support = true;
+            UnstableFeature::EnableAggregationPredicates => {
+                features.enable_aggregation_predicates = true;
             }
         }
     }
-
     features
 }

@@ -1,8 +1,5 @@
-use std::collections::BTreeMap;
-
+use crate::{helpers::types::DuplicateRootFieldError, types::warning::Warning};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
-
 use lang_graphql::ast::common::{self as ast};
 use open_dds::{
     aggregates::AggregateExpressionName,
@@ -10,24 +7,25 @@ use open_dds::{
     models::ModelName,
     types::{Deprecated, FieldName},
 };
+use serde::{Deserialize, Serialize};
 
-use crate::helpers::types::NdcColumnForComparison;
-use crate::stages::{boolean_expressions, models, object_boolean_expressions};
+use crate::stages::{boolean_expressions, models};
+use crate::types::error::ShouldBeAnError;
 use crate::types::subgraph::{Qualified, QualifiedTypeReference};
+use crate::{OrderByExpressionIdentifier, helpers::types::NdcColumnForComparison};
 
-/// A Model, once we have added filter expression and graphql for it
-pub(crate) struct ModelWithGraphql {
-    pub inner: models::Model,
-    pub filter_expression_type: Option<ModelExpressionType>,
-    pub graphql_api: ModelGraphQlApi,
+#[derive(Debug)]
+pub struct ModelsWithGraphqlOutput {
+    pub models_with_graphql: IndexMap<Qualified<ModelName>, ModelWithGraphql>,
+    pub issues: Vec<Warning>,
 }
 
-pub(crate) type ModelsWithGraphql = IndexMap<Qualified<ModelName>, ModelWithGraphql>;
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum ModelExpressionType {
-    ObjectBooleanExpressionType(object_boolean_expressions::ObjectBooleanExpressionType),
-    BooleanExpressionType(boolean_expressions::ResolvedObjectBooleanExpressionType),
+/// A Model resolved with regards to it's data source
+#[derive(Debug)]
+pub(crate) struct ModelWithGraphql {
+    pub inner: models::Model,
+    pub filter_expression_type: Option<boolean_expressions::ResolvedObjectBooleanExpressionType>,
+    pub graphql_api: ModelGraphQlApi,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -40,24 +38,57 @@ pub struct UniqueIdentifierField {
 pub struct SelectUniqueGraphQlDefinition {
     pub query_root_field: ast::Name,
     pub unique_identifier: IndexMap<FieldName, UniqueIdentifierField>,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub description: Option<String>,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub deprecated: Option<Deprecated>,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub subscription: Option<SubscriptionGraphQlDefinition>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct SelectManyGraphQlDefinition {
     pub query_root_field: ast::Name,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub description: Option<String>,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub deprecated: Option<Deprecated>,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub subscription: Option<SubscriptionGraphQlDefinition>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct SelectAggregateGraphQlDefinition {
     pub query_root_field: ast::Name,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub description: Option<String>,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub deprecated: Option<Deprecated>,
     pub aggregate_expression_name: Qualified<AggregateExpressionName>,
     pub filter_input_field_name: ast::Name,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub subscription: Option<SubscriptionGraphQlDefinition>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SubscriptionGraphQlDefinition {
+    pub root_field: ast::Name,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub description: Option<String>,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub deprecated: Option<Deprecated>,
+    pub polling_interval_ms: u64,
 }
 
 // TODO: add support for aggregates
@@ -70,8 +101,8 @@ pub struct OrderByExpressionInfo {
 pub struct ModelOrderByExpression {
     pub data_connector_name: Qualified<DataConnectorName>,
     pub order_by_type_name: ast::TypeName,
-    pub order_by_fields: BTreeMap<FieldName, OrderByExpressionInfo>,
     pub order_by_field_name: ast::Name,
+    pub order_by_expression_identifier: Qualified<OrderByExpressionIdentifier>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -99,4 +130,40 @@ pub struct ModelGraphQlApi {
     pub limit_field: Option<LimitFieldGraphqlConfig>,
     pub offset_field: Option<OffsetFieldGraphqlConfig>,
     pub filter_input_type_name: Option<ast::TypeName>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ModelGraphqlIssue {
+    #[error(
+        "the model {model_name} has defined a selectAggregate graphql API, but it will not appear in the GraphQL API unless query.aggregate.filterInputFieldName is also configured in GraphqlConfig"
+    )]
+    MissingAggregateFilterInputFieldNameInGraphqlConfig { model_name: Qualified<ModelName> },
+
+    #[error("the model {model_name} has a duplicate root field in the GraphQL schema: {error:}")]
+    DuplicateRootField {
+        model_name: Qualified<ModelName>,
+        error: DuplicateRootFieldError,
+    },
+
+    #[error(
+        "model arguments graphql input configuration has been specified for model {model_name:} that does not have arguments"
+    )]
+    UnnecessaryModelArgumentsGraphQlInputConfiguration { model_name: Qualified<ModelName> },
+    #[error(
+        "an unnecessary filter input type name graphql configuration has been specified for model {model_name:} that does not use aggregates"
+    )]
+    UnnecessaryFilterInputTypeNameGraphqlConfiguration { model_name: Qualified<ModelName> },
+}
+
+impl ShouldBeAnError for ModelGraphqlIssue {
+    fn should_be_an_error(&self, flags: &open_dds::flags::OpenDdFlags) -> bool {
+        match self {
+            ModelGraphqlIssue::MissingAggregateFilterInputFieldNameInGraphqlConfig { .. }
+            | ModelGraphqlIssue::UnnecessaryModelArgumentsGraphQlInputConfiguration { .. }
+            | ModelGraphqlIssue::UnnecessaryFilterInputTypeNameGraphqlConfiguration { .. } => false,
+            ModelGraphqlIssue::DuplicateRootField { .. } => {
+                flags.contains(open_dds::flags::Flag::RequireUniqueModelGraphqlNames)
+            }
+        }
+    }
 }

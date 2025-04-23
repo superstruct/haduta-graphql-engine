@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use ndc_models;
 
 use crate::{
+    arguments::check_all_arguments_used,
     query::Result,
     state::{AppState, Row},
 };
@@ -13,7 +14,6 @@ pub(crate) fn collection_info() -> ndc_models::CollectionInfo {
         description: Some("A collection of institutions".into()),
         collection_type: "institution".into(),
         arguments: BTreeMap::new(),
-        foreign_keys: BTreeMap::new(),
         uniqueness_constraints: BTreeMap::from_iter([(
             "InstitutionByID".into(),
             ndc_models::UniquenessConstraint {
@@ -23,8 +23,12 @@ pub(crate) fn collection_info() -> ndc_models::CollectionInfo {
     }
 }
 
-pub(crate) fn rows(state: &AppState) -> Vec<Row> {
-    state.institutions.values().cloned().collect()
+pub(crate) fn rows(
+    arguments: &BTreeMap<ndc_models::ArgumentName, serde_json::Value>,
+    state: &AppState,
+) -> Result<Vec<Row>> {
+    check_all_arguments_used(arguments)?;
+    Ok(state.institutions.values().cloned().collect())
 }
 
 pub struct Institution<'a> {

@@ -2,20 +2,20 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use axum::http::{HeaderMap, HeaderValue};
-use axum::response::IntoResponse;
 use cookie::{self, Cookie};
-use hasura_authn_core::{Role, SessionVariable, SessionVariableValue};
+use hasura_authn_core::{JsonSessionVariableValue, Role};
 use jsonptr::Pointer;
-use jsonwebtoken::{self as jwt, decode, DecodingKey, Validation};
+use jsonwebtoken::{self as jwt, DecodingKey, Validation, decode};
 use jwt::decode_header;
-use reqwest::header::{AUTHORIZATION, COOKIE};
+use open_dds::session_variables::SessionVariableName;
 use reqwest::StatusCode;
-use schemars::gen::SchemaGenerator;
+use reqwest::header::{AUTHORIZATION, COOKIE};
+use schemars::r#gen::SchemaGenerator;
 use schemars::schema::{Schema, SchemaObject};
 
 use schemars::JsonSchema;
-use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{json, Value};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as SerdeDeError};
+use serde_json::{Value, json};
 use std::collections::HashSet;
 use tracing_util::{ErrorVisibility, SpanVisibility, TraceableError};
 use url::Url;
@@ -39,6 +39,8 @@ pub enum Error {
         claim_name: String,
         err: serde_json::Error,
     },
+    #[error("Expected string value for claim {claim_name}")]
+    ClaimMustBeAString { claim_name: String },
     #[error("Required claim {claim_name} not found")]
     RequiredClaimNotFound { claim_name: String },
     #[error("JWT Authorization token source: Header name {header_name} not found.")]
@@ -113,18 +115,39 @@ impl Error {
                 header_name: _,
             }
             | Error::CookieParseError { err: _ }
-            | Error::MissingCookieValue { cookie_name: _ } => StatusCode::BAD_REQUEST,
+            | Error::MissingCookieValue { cookie_name: _ }
+            | Error::ClaimMustBeAString { claim_name: _ } => StatusCode::BAD_REQUEST,
         }
     }
-}
 
-impl IntoResponse for Error {
-    fn into_response(self) -> axum::response::Response {
-        lang_graphql::http::Response::error_message_with_status(
-            self.to_status_code(),
-            self.to_string(),
-        )
-        .into_response()
+    pub fn into_middleware_error(self) -> engine_types::MiddlewareError {
+        let is_internal = match self {
+            Error::Internal(_) => true,
+            Error::ErrorDecodingAuthorizationHeader(_)
+            | Error::KidHeaderNotFound
+            | Error::ExpectedStringifiedJson
+            | Error::DisallowedDefaultRole
+            | Error::ParseClaimsMapEntryError {
+                claim_name: _,
+                err: _,
+            }
+            | Error::RequiredClaimNotFound { claim_name: _ }
+            | Error::AuthorizationHeaderSourceNotFound { header_name: _ }
+            | Error::CookieNotFound
+            | Error::CookieNameNotFound { cookie_name: _ }
+            | Error::AuthorizationHeaderParseError {
+                err: _,
+                header_name: _,
+            }
+            | Error::CookieParseError { err: _ }
+            | Error::MissingCookieValue { cookie_name: _ }
+            | Error::ClaimMustBeAString { claim_name: _ } => false,
+        };
+        engine_types::MiddlewareError {
+            status: self.to_status_code(),
+            message: self.to_string(),
+            is_internal,
+        }
     }
 }
 
@@ -206,8 +229,8 @@ pub enum JWTClaimsFormat {
     StringifiedJson,
 }
 
-fn json_pointer_schema(gen: &mut SchemaGenerator) -> Schema {
-    let mut schema: SchemaObject = <String>::json_schema(gen).into();
+fn json_pointer_schema(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema: SchemaObject = <String>::json_schema(generator).into();
     schema.format = Some("JSON pointer".to_string());
     schema.into()
 }
@@ -216,6 +239,7 @@ fn json_pointer_schema(gen: &mut SchemaGenerator) -> Schema {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "JWTClaimsMappingPathEntry")]
+/// Entry to lookup the Hasura claims at the specified JSON Pointer
 pub struct JWTClaimsMappingPathEntry<T> {
     /// JSON pointer to find the particular claim in the decoded
     /// JWT token.
@@ -239,6 +263,9 @@ pub enum JWTClaimsMappingEntry<T> {
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, JsonSchema, Debug)]
 #[schemars(title = "JWTClaimsMap")]
+// This causes the flattened custom_claims to be included in the JSON schema (see https://github.com/GREsau/schemars/issues/259)
+// It is only required in v0.8 and is apparently fixed in v1.0 (which is in alpha at time of writing)
+#[schemars(deny_unknown_fields)]
 /// Can be used when Hasura claims are not all present in the single object, but individual
 /// claims are provided a JSON pointer within the decoded JWT and optionally a default value.
 pub struct JWTClaimsMap {
@@ -252,7 +279,7 @@ pub struct JWTClaimsMap {
     /// A dictionary of the custom claims, where the key is the name of the claim and the value
     /// is the JSON pointer to lookup the custom claims within the decoded JWT.
     pub custom_claims:
-        Option<HashMap<SessionVariable, JWTClaimsMappingEntry<SessionVariableValue>>>,
+        HashMap<SessionVariableName, JWTClaimsMappingEntry<JsonSessionVariableValue>>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, JsonSchema, Debug)]
@@ -389,7 +416,7 @@ pub struct HasuraClaims {
     /// as per the user's defined permissions.
     /// For example, things like `x-hasura-user-id` can go here.
     #[serde(flatten)]
-    pub custom_claims: HashMap<SessionVariable, SessionVariableValue>,
+    pub custom_claims: HashMap<SessionVariableName, JsonSessionVariableValue>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -432,15 +459,15 @@ fn get_decoding_key(secret_config: &JWTKeyConfig) -> Result<DecodingKey, Error> 
 
 async fn get_decoding_key_from_jwk_url(
     http_client: &reqwest::Client,
-    jwk_url: Url,
+    jwk_url: &Url,
     jwt_authorization_header: &str,
-) -> Result<(jwt::Algorithm, jwt::DecodingKey), Error> {
+) -> Result<(Vec<jwt::Algorithm>, jwt::DecodingKey), Error> {
     let tracer = tracing_util::global_tracer();
     tracer
         .in_span_async("fetch_jwk", "Fetch JWK", SpanVisibility::Internal, || {
             Box::pin(async {
                 let jwk_request = http_client
-                    .get(jwk_url)
+                    .get(jwk_url.clone())
                     .headers(tracing_util::get_trace_headers())
                     .timeout(Duration::from_secs(60))
                     .build()
@@ -463,11 +490,8 @@ async fn get_decoding_key_from_jwk_url(
                         .ok_or(InternalError::NoMatchingJWKFound { kid })?;
                     let decoding_key = jwt::DecodingKey::from_jwk(jwk)
                         .map_err(InternalError::JWTDecodingKeyError)?;
-                    let algorithm = jwk
-                        .common
-                        .algorithm
-                        .ok_or(InternalError::AlgorithmNotFoundInJWK)?;
-                    Ok((algorithm, decoding_key))
+                    let acceptable_algorithms = get_acceptable_algorithms_for_key(jwk);
+                    Ok((acceptable_algorithms, decoding_key))
                 } else {
                     Err(InternalError::UnsuccessfulJWKFetch(jwk_response.status()))?
                 }
@@ -476,45 +500,89 @@ async fn get_decoding_key_from_jwk_url(
         .await
 }
 
-fn get_claims_mapping_entry_value<T: for<'de> serde::Deserialize<'de>>(
+fn get_acceptable_algorithms_for_key(jwk: &jwt::jwk::Jwk) -> Vec<jwt::Algorithm> {
+    match &jwk.algorithm {
+        // Elliptic curve family algorithms
+        jsonwebtoken::jwk::AlgorithmParameters::EllipticCurve(_) => {
+            vec![jwt::Algorithm::ES256, jwt::Algorithm::ES384]
+        }
+        // RSA family algorithms
+        jsonwebtoken::jwk::AlgorithmParameters::RSA(_) => vec![
+            jwt::Algorithm::RS256,
+            jwt::Algorithm::RS384,
+            jwt::Algorithm::RS512,
+            jwt::Algorithm::PS256,
+            jwt::Algorithm::PS384,
+            jwt::Algorithm::PS512,
+        ],
+        // HMAC family algorithms
+        jsonwebtoken::jwk::AlgorithmParameters::OctetKey(_) => vec![
+            jwt::Algorithm::HS256,
+            jwt::Algorithm::HS384,
+            jwt::Algorithm::HS512,
+        ],
+        // Edwards-curve algorithms
+        jsonwebtoken::jwk::AlgorithmParameters::OctetKeyPair(_) => vec![jwt::Algorithm::EdDSA],
+    }
+}
+
+fn get_claims_mapping_entry_value<T: for<'de> serde::Deserialize<'de> + Clone>(
     claim_name: String,
-    claims_mapping_entry: JWTClaimsMappingEntry<T>,
+    claims_mapping_entry: &JWTClaimsMappingEntry<T>,
     json_value: &serde_json::Value,
 ) -> Result<Option<T>, Error> {
     match claims_mapping_entry {
-        JWTClaimsMappingEntry::Literal(literal_value) => Ok(Some(literal_value)),
+        JWTClaimsMappingEntry::Literal(literal_value) => Ok(Some(literal_value.clone())),
         JWTClaimsMappingEntry::Path(JWTClaimsMappingPathEntry { path, default }) => {
-            Ok(match json_value.pointer(&path) {
+            Ok(match json_value.pointer(path) {
                 Some(v) => Some(
                     serde_json::from_value(v.clone())
                         .map_err(|e| Error::ParseClaimsMapEntryError { claim_name, err: e })?,
                 ),
-                None => default,
+                None => default.clone(),
             })
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AudienceValidationMode {
+    /// If the JWT contains an aud claim, it must be validated against the audience configured in the AuthConfig.
+    /// If one is not configured, the JWT will be rejected.
+    Required,
+
+    /// If the JWT contains an aud claim, it will be validated against the audience configured in the AuthConfig,
+    /// but only if one is configured. This is a serious security issue, but this behaviour is retained for
+    /// backwards compatibility and is disabled via the OpenDDFlag `RequireJwtAudienceValidationIfAudClaimPresent`
+    Optional,
+}
+
 pub(crate) async fn decode_and_parse_hasura_claims(
     http_client: &reqwest::Client,
-    jwt_config: JWTConfig,
+    jwt_config: &JWTConfig,
     jwt: String,
+    audience_validation_mode: AudienceValidationMode,
 ) -> Result<HasuraClaims, Error> {
-    let (alg, decoding_key) = match jwt_config.key {
-        JWTKey::Fixed(conf) => (conf.algorithm, get_decoding_key(&conf)?),
+    let (acceptable_algorithms, decoding_key) = match &jwt_config.key {
+        JWTKey::Fixed(conf) => (vec![conf.algorithm], get_decoding_key(conf)?),
         JWTKey::JwkFromUrl(jwk_url) => {
             get_decoding_key_from_jwk_url(http_client, jwk_url, &jwt).await?
         }
     };
 
-    let mut validation = Validation::new(alg);
-
-    // Additional validations according to the `jwt_config`.
-    if let Some(aud) = jwt_config.audience {
-        validation.set_audience(&aud.into_iter().collect::<Vec<_>>());
+    let mut validation = Validation::default();
+    validation.algorithms = acceptable_algorithms;
+    validation.validate_aud = match audience_validation_mode {
+        AudienceValidationMode::Required => true,
+        AudienceValidationMode::Optional => false,
     };
 
-    if let Some(issuer) = jwt_config.issuer {
+    // Additional validations according to the `jwt_config`.
+    if let Some(aud) = &jwt_config.audience {
+        validation.set_audience(&aud.iter().collect::<Vec<_>>());
+    };
+
+    if let Some(issuer) = &jwt_config.issuer {
         validation.set_issuer(&[issuer]);
     };
 
@@ -526,7 +594,7 @@ pub(crate) async fn decode_and_parse_hasura_claims(
         .map_err(InternalError::JWTDecodingError)?
         .claims;
 
-    let hasura_claims = match jwt_config.claims_config {
+    let hasura_claims = match &jwt_config.claims_config {
         // This case can be avoided, if we can use serde's `Default` and `Flatten`
         // together, but unfortunately that is not possible at the moment.
         // https://github.com/serde-rs/serde/issues/1626
@@ -534,7 +602,7 @@ pub(crate) async fn decode_and_parse_hasura_claims(
             claims_format,
             location: claims_namespace_path,
         }) => {
-            let unprocessed_hasura_claims = claims.pointer(&claims_namespace_path).ok_or(
+            let unprocessed_hasura_claims = claims.pointer(claims_namespace_path).ok_or(
                 InternalError::HasuraClaimsNotFound {
                     path: claims_namespace_path.to_string(),
                 },
@@ -556,7 +624,7 @@ pub(crate) async fn decode_and_parse_hasura_claims(
         JWTClaimsConfig::Locations(claims_mappings) => {
             let default_role = get_claims_mapping_entry_value(
                 "x-hasura-default-role".to_string(),
-                claims_mappings.default_role,
+                &claims_mappings.default_role,
                 &claims,
             )?
             .ok_or(Error::RequiredClaimNotFound {
@@ -565,7 +633,7 @@ pub(crate) async fn decode_and_parse_hasura_claims(
 
             let allowed_roles = get_claims_mapping_entry_value(
                 "x-hasura-allowed-roles".to_string(),
-                claims_mappings.allowed_roles,
+                &claims_mappings.allowed_roles,
                 &claims,
             )?
             .ok_or(Error::RequiredClaimNotFound {
@@ -573,17 +641,14 @@ pub(crate) async fn decode_and_parse_hasura_claims(
             })?;
             let mut custom_claims = HashMap::new();
 
-            claims_mappings.custom_claims.map(|custom_claim_mappings| {
-                for (claim_name, claims_mapping_entry) in custom_claim_mappings {
-                    let claim_value = get_claims_mapping_entry_value(
-                        claim_name.to_string(),
-                        claims_mapping_entry,
-                        &claims,
-                    )?;
-                    claim_value.map(|claim_val| custom_claims.insert(claim_name, claim_val));
-                }
-                Ok::<(), Error>(())
-            });
+            for (claim_name, claims_mapping_entry) in &claims_mappings.custom_claims {
+                let claim_value = get_claims_mapping_entry_value(
+                    claim_name.to_string(),
+                    claims_mapping_entry,
+                    &claims,
+                )?;
+                claim_value.map(|claim_val| custom_claims.insert(claim_name.clone(), claim_val));
+            }
 
             HasuraClaims {
                 default_role,
@@ -681,7 +746,7 @@ mod tests {
 
     use jsonwebkey as jwk;
     use jwk::{Algorithm::ES256, JsonWebKey};
-    use jwt::{encode, EncodingKey};
+    use jwt::{EncodingKey, encode};
     use openssl::pkey::PKey;
     use openssl::rsa::Rsa;
     use tokio;
@@ -732,8 +797,8 @@ mod tests {
     fn get_default_hasura_claims() -> HasuraClaims {
         let mut hasura_custom_claims = HashMap::new();
         hasura_custom_claims.insert(
-            SessionVariable::from_str("x-hasura-user-id").unwrap(),
-            SessionVariableValue("1".to_string()),
+            SessionVariableName::from_str("x-hasura-user-id").unwrap(),
+            JsonSessionVariableValue(json!("1")),
         );
         HasuraClaims {
             default_role: Role::new("user"),
@@ -852,8 +917,13 @@ mod tests {
 
         let http_client = reqwest::Client::new();
 
-        let decoded_claims =
-            decode_and_parse_hasura_claims(&http_client, jwt_config, encoded_claims).await?;
+        let decoded_claims = decode_and_parse_hasura_claims(
+            &http_client,
+            &jwt_config,
+            encoded_claims,
+            AudienceValidationMode::Required,
+        )
+        .await?;
         assert_eq!(hasura_claims, decoded_claims);
         Ok(())
     }
@@ -905,8 +975,13 @@ mod tests {
 
         let http_client = reqwest::Client::new();
 
-        let decoded_claims =
-            decode_and_parse_hasura_claims(&http_client, jwt_config, encoded_claims).await?;
+        let decoded_claims = decode_and_parse_hasura_claims(
+            &http_client,
+            &jwt_config,
+            encoded_claims,
+            AudienceValidationMode::Required,
+        )
+        .await?;
         assert_eq!(hasura_claims, decoded_claims);
         Ok(())
     }
@@ -970,8 +1045,13 @@ mod tests {
 
         let http_client = reqwest::Client::new();
 
-        let decoded_claims =
-            decode_and_parse_hasura_claims(&http_client, jwt_config, encoded_claims).await?;
+        let decoded_claims = decode_and_parse_hasura_claims(
+            &http_client,
+            &jwt_config,
+            encoded_claims,
+            AudienceValidationMode::Required,
+        )
+        .await?;
         assert_eq!(hasura_claims, decoded_claims);
         Ok(())
     }
@@ -1044,9 +1124,143 @@ mod tests {
 
         let http_client = reqwest::Client::new();
 
-        let decoded_claims =
-            decode_and_parse_hasura_claims(&http_client, jwt_config, encoded_claims).await?;
+        let decoded_claims = decode_and_parse_hasura_claims(
+            &http_client,
+            &jwt_config,
+            encoded_claims,
+            AudienceValidationMode::Required,
+        )
+        .await?;
         assert_eq!(hasura_claims, decoded_claims);
+        Ok(())
+    }
+
+    #[tokio::test]
+    // This test emulates a scenario where each location of the Hasura claims is specified explicitly, but no custom claims are present
+    async fn test_jwt_claims_mapping_with_no_custom_claims() -> anyhow::Result<()> {
+        let alg = jwt::Algorithm::HS256;
+
+        let jwt_secret_config_json = json!(
+            {
+               "key": {
+                 "fixed": {
+                    "algorithm": "HS256",
+                    "key": {
+                       "value": "token"
+                    }
+                 }
+               },
+               "tokenLocation": {
+                  "type": "BearerAuthorization"
+               },
+               "claimsConfig": {
+                 "locations": {
+                     "x-hasura-default-role": {
+                        "path": {
+                           "path": "/roles/2",
+                           "default": "user"
+                         }
+                     },
+                     "x-hasura-allowed-roles": {
+                        "path": {
+                          "path": "/roles"
+                        }
+                     }
+                  }
+               }
+            }
+        );
+
+        let jwt_config = serde_json::from_value(jwt_secret_config_json)?;
+
+        let mut hasura_claims = get_default_hasura_claims();
+        hasura_claims.custom_claims.clear();
+
+        let claims_json = json!(
+            {
+                "sub": "1234567890",
+                "name": "John Doe",
+                "iat": 1693439022,
+                "exp": 1916239022,
+                "roles": [
+                     "foo",
+                     "bar",
+                     "user"
+                ]
+            }
+        );
+        let claims: Claims = serde_json::from_value(claims_json)?;
+        let jwt_header = jwt::Header {
+            alg,
+            ..Default::default()
+        };
+        let encoded_claims = encode(
+            &jwt_header,
+            &claims,
+            &EncodingKey::from_secret("token".as_ref()),
+        )?;
+
+        let http_client = reqwest::Client::new();
+
+        let decoded_claims = decode_and_parse_hasura_claims(
+            &http_client,
+            &jwt_config,
+            encoded_claims,
+            AudienceValidationMode::Required,
+        )
+        .await?;
+        assert_eq!(hasura_claims, decoded_claims);
+        Ok(())
+    }
+
+    #[tokio::test]
+    // This test emulates a scenario where the location of the claim is a malformed json pointer
+    async fn test_jwt_claims_mapping_with_malformed_json_pointer() -> anyhow::Result<()> {
+        let jwt_secret_config_json = json!(
+            {
+               "key": {
+                 "fixed": {
+                    "algorithm": "HS256",
+                    "key": {
+                       "value": "token"
+                    }
+                 }
+               },
+               "tokenLocation": {
+                  "type": "BearerAuthorization"
+               },
+               "claimsConfig": {
+                 "locations": {
+                     "x-hasura-default-role": {
+                        "path": {
+                           "path": "/roles/2",
+                           "default": "user"
+                         }
+                     },
+                     "x-hasura-allowed-roles": {
+                        "path": {
+                          "path": "/roles"
+                        }
+                     },
+                     "x-hasura-user-id": {
+                        "path": {
+                            "path": "custom_claims/user_id" // This is missing a leading slash
+                        }
+                     }
+                  }
+               }
+            }
+        );
+
+        let jwt_config_result = serde_json::from_value::<JWTConfig>(jwt_secret_config_json);
+        assert!(
+            jwt_config_result.is_err(),
+            "jwt_config_result should have been an error: {jwt_config_result:?}"
+        );
+        assert_eq!(
+            jwt_config_result.unwrap_err().to_string(),
+            "json pointer \"custom_claims/user_id\" is malformed due to missing starting slash"
+        );
         Ok(())
     }
 
@@ -1058,7 +1272,13 @@ mod tests {
     #[tokio::test]
     // This test emulates scenarios where multiple JWKs are present and only the correct encoded JWT is used to decode the Hasura claims
     async fn test_jwk() -> anyhow::Result<()> {
-        tracing_util::initialize_tracing(None, "test_jwk", None, false)?;
+        tracing_util::initialize_tracing(
+            None,
+            "test_jwk".to_string(),
+            None,
+            tracing_util::PropagateBaggage::Disable,
+            tracing_util::ExportTracesStdout::Disable,
+        )?;
         let mut server = mockito::Server::new_async().await;
 
         let url = server.url();
@@ -1079,10 +1299,10 @@ mod tests {
         let non_empty = mockito::Matcher::Regex(".+".to_string());
         let mock = server
             .mock("GET", "/jwk")
-            // check W3C trace headrs are present
+            // check W3C trace headers are present
             .match_header("traceparent", non_empty.clone())
             .match_header("tracestate", mockito::Matcher::Any)
-            // check B3 trace headrs are present
+            // check B3 trace headers are present
             .match_header("x-b3-traceid", non_empty.clone())
             .match_header("x-b3-spanid", non_empty)
             .with_status(200)
@@ -1128,9 +1348,13 @@ mod tests {
 
         let jwt_config: JWTConfig = serde_json::from_value(jwt_config_json)?;
 
-        let decoded_hasura_claims =
-            decode_and_parse_hasura_claims(&http_client, jwt_config.clone(), authorization_token_1)
-                .await?;
+        let decoded_hasura_claims = decode_and_parse_hasura_claims(
+            &http_client,
+            &jwt_config,
+            authorization_token_1,
+            AudienceValidationMode::Required,
+        )
+        .await?;
 
         mock.assert();
 
@@ -1150,10 +1374,15 @@ mod tests {
         )?;
 
         assert_eq!(
-            decode_and_parse_hasura_claims(&http_client, jwt_config, authorization_token_2)
-                .await
-                .unwrap_err()
-                .to_string(),
+            decode_and_parse_hasura_claims(
+                &http_client,
+                &jwt_config,
+                authorization_token_2,
+                AudienceValidationMode::Required
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
             "Internal Error - No matching JWK found for the given kid: random_kid_3"
         );
         Ok(())
@@ -1341,10 +1570,14 @@ mod tests {
         });
         let jwt_config: JWTConfig = serde_json::from_value(jwt_secret_config_json)?;
         let http_client = reqwest::Client::new();
-        let decoded_claims =
-            decode_and_parse_hasura_claims(&http_client, jwt_config, encoded_claims)
-                .await
-                .unwrap();
+        let decoded_claims = decode_and_parse_hasura_claims(
+            &http_client,
+            &jwt_config,
+            encoded_claims,
+            AudienceValidationMode::Required,
+        )
+        .await
+        .unwrap();
         assert_eq!(hasura_claims, decoded_claims);
         Ok(())
     }

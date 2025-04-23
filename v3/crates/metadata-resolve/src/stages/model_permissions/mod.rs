@@ -1,16 +1,20 @@
+mod error;
+mod predicate;
 mod types;
 use crate::stages::{
-    boolean_expressions, data_connector_scalar_types, data_connectors, models_graphql,
-    object_boolean_expressions, relationships, scalar_types,
+    boolean_expressions, data_connector_scalar_types, models_graphql, object_relationships,
+    scalar_types,
 };
+pub use error::{ModelPermissionError, NamedModelPermissionError};
 use indexmap::IndexMap;
 use open_dds::{data_connector::DataConnectorName, models::ModelName, types::CustomTypeName};
 use std::collections::BTreeMap;
 pub use types::{
-    FilterPermission, ModelPredicate, ModelTargetSource, ModelWithPermissions,
-    PredicateRelationshipInfo, SelectPermission, UnaryComparisonOperator,
+    FilterPermission, ModelPermissionIssue, ModelPermissionsOutput, ModelPredicate,
+    ModelTargetSource, ModelWithPermissions, SelectPermission, UnaryComparisonOperator,
 };
 mod model_permission;
+pub(crate) use predicate::resolve_model_predicate_with_type;
 
 use crate::types::error::Error;
 
@@ -19,20 +23,19 @@ use crate::types::subgraph::Qualified;
 /// resolve model permissions
 pub fn resolve(
     metadata_accessor: &open_dds::accessor::MetadataAccessor,
-    data_connectors: &data_connectors::DataConnectors,
     data_connector_scalars: &BTreeMap<
         Qualified<DataConnectorName>,
-        data_connector_scalar_types::ScalarTypeWithRepresentationInfoMap,
+        data_connector_scalar_types::DataConnectorScalars,
     >,
-    object_types: &BTreeMap<Qualified<CustomTypeName>, relationships::ObjectTypeWithRelationships>,
+    object_types: &BTreeMap<
+        Qualified<CustomTypeName>,
+        object_relationships::ObjectTypeWithRelationships,
+    >,
     scalar_types: &BTreeMap<Qualified<CustomTypeName>, scalar_types::ScalarTypeRepresentation>,
     models: &IndexMap<Qualified<ModelName>, models_graphql::ModelWithGraphql>,
-    object_boolean_expression_types: &BTreeMap<
-        Qualified<CustomTypeName>,
-        object_boolean_expressions::ObjectBooleanExpressionType,
-    >,
     boolean_expression_types: &boolean_expressions::BooleanExpressionTypes,
-) -> Result<IndexMap<Qualified<ModelName>, ModelWithPermissions>, Error> {
+) -> Result<ModelPermissionsOutput, Error> {
+    let mut issues = Vec::new();
     let mut models_with_permissions: IndexMap<Qualified<ModelName>, ModelWithPermissions> = models
         .iter()
         .map(|(model_name, model)| {
@@ -52,49 +55,45 @@ pub fn resolve(
     // hence Model permissions should be resolved after the relationships of a
     // model is resolved.
     for open_dds::accessor::QualifiedObject {
+        path: _,
         subgraph,
         object: permissions,
     } in &metadata_accessor.model_permissions
     {
-        let model_name = Qualified::new(subgraph.to_string(), permissions.model_name.clone());
+        let model_name =
+            Qualified::new(subgraph.clone(), permissions.model_name.clone()).transpose_spanned();
+
         let model = models_with_permissions
-            .get_mut(&model_name)
-            .ok_or_else(|| Error::UnknownModelInModelSelectPermissions {
+            .get_mut(&model_name.value)
+            .ok_or_else(|| Error::UnknownModelInModelPermissions {
                 model_name: model_name.clone(),
             })?;
 
         if model.select_permissions.is_empty() {
-            let boolean_expression_graphql = model
-                .filter_expression_type
-                .as_ref()
-                .and_then(|filter| match filter {
-                    models_graphql::ModelExpressionType::BooleanExpressionType(
-                        boolean_expression_type,
-                    ) => Some(boolean_expression_type),
-                    models_graphql::ModelExpressionType::ObjectBooleanExpressionType(_) => None,
-                })
-                .and_then(|bool_exp| bool_exp.graphql.as_ref());
+            let boolean_expression = model.filter_expression_type.as_ref();
 
-            let select_permissions = model_permission::resolve_model_select_permissions(
+            let select_permissions = model_permission::resolve_all_model_select_permissions(
+                &metadata_accessor.flags,
                 &model.model,
-                subgraph,
                 permissions,
-                boolean_expression_graphql,
-                data_connectors,
+                boolean_expression,
                 data_connector_scalars,
                 object_types,
                 scalar_types,
                 models, // This is required to get the model for the relationship target
-                object_boolean_expression_types,
                 boolean_expression_types,
+                &mut issues,
             )?;
 
             model.select_permissions = select_permissions;
         } else {
-            return Err(Error::DuplicateModelSelectPermission {
+            return Err(Error::DuplicateModelPermissions {
                 model_name: model_name.clone(),
             });
         }
     }
-    Ok(models_with_permissions)
+    Ok(ModelPermissionsOutput {
+        permissions: models_with_permissions,
+        issues,
+    })
 }

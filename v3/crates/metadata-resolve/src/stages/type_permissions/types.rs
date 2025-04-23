@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 
-use open_dds::permissions::{Role, TypeOutputPermission, ValueExpression};
+use open_dds::{
+    permissions::{Role, TypeOutputPermission},
+    types::Deprecated,
+};
 
-use crate::stages::object_types;
 use crate::Qualified;
+use crate::{ValueExpression, stages::object_types};
 use open_dds::types::{CustomTypeName, FieldName};
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
@@ -35,7 +38,15 @@ impl ObjectTypesWithPermissions {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct TypeInputPermission {
-    pub field_presets: BTreeMap<FieldName, ValueExpression>,
+    pub field_presets: BTreeMap<FieldName, FieldPresetInfo>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct FieldPresetInfo {
+    pub value: ValueExpression,
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub deprecated: Option<Deprecated>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

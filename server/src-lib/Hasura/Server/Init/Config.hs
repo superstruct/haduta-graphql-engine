@@ -50,6 +50,7 @@ module Hasura.Server.Init.Config
     isTelemetryEnabled,
     WsReadCookieStatus (..),
     isWsReadCookieEnabled,
+    Preserve401ErrorsStatus (..),
     Port,
     _getPort,
     mkPort,
@@ -89,6 +90,7 @@ import Data.URL.Template qualified as Template
 import Database.PG.Query qualified as Query
 import Hasura.Authentication.Role (RoleName, adminRoleName)
 import Hasura.Backends.Postgres.Connection.MonadTx qualified as MonadTx
+import Hasura.Base.Error (IncludeInternalErrors (..))
 import Hasura.GraphQL.Execute.Subscription.Options qualified as Subscription.Options
 import Hasura.Logging qualified as Logging
 import Hasura.NativeQuery.Validation qualified as NativeQuery.Validation
@@ -321,6 +323,7 @@ data ServeOptionsRaw impl = ServeOptionsRaw
     rsoGracefulShutdownTimeout :: Maybe (Refined NonNegative Seconds),
     rsoWebSocketConnectionInitTimeout :: Maybe WSConnectionInitTimeout,
     rsoEnableMetadataQueryLoggingEnv :: Server.Logging.MetadataQueryLoggingMode,
+    rsoHttpLogQueryOnlyOnError :: Server.Logging.HttpLogQueryOnlyOnError,
     -- | stores global default naming convention
     rsoDefaultNamingConvention :: Maybe NamingCase,
     rsoExtensionsSchema :: Maybe MonadTx.ExtensionsSchema,
@@ -335,7 +338,8 @@ data ServeOptionsRaw impl = ServeOptionsRaw
     rsoRemoteSchemaResponsePriority :: Maybe Server.Types.RemoteSchemaResponsePriority,
     rsoHeaderPrecedence :: Maybe Server.Types.HeaderPrecedence,
     rsoTraceQueryStatus :: Maybe Server.Types.TraceQueryStatus,
-    rsoDisableNativeQueryValidation :: NativeQuery.Validation.DisableNativeQueryValidation
+    rsoDisableNativeQueryValidation :: NativeQuery.Validation.DisableNativeQueryValidation,
+    rsoPreserve401Errors :: Preserve401ErrorsStatus
   }
 
 deriving stock instance (Show (Logging.EngineLogType impl)) => Show (ServeOptionsRaw impl)
@@ -588,6 +592,19 @@ instance ToJSON WSConnectionInitTimeout where
 
 --------------------------------------------------------------------------------
 
+-- | Status code preservation mode for 401 errors. See this draft spec:
+-- https://graphql.github.io/graphql-over-http/draft/#sel-FAHLFABABD3lV
+data Preserve401ErrorsStatus
+  = -- | Map all errors (including 401) to status 200 (default)
+    MapEverythingTo200
+  | -- | Preserve 401 status codes from webhooks/JWT auth
+    Preserve401Errors
+  deriving stock (Show, Eq, Generic)
+
+instance NFData Preserve401ErrorsStatus
+
+instance Hashable Preserve401ErrorsStatus
+
 -- | The final Serve Command options accummulated from the Arg Parser
 -- and the Environment, fully processed and ready to apply when
 -- running the server.
@@ -635,6 +652,7 @@ data ServeOptions impl = ServeOptions
     -- | See note '$readOnlyMode'
     soReadOnlyMode :: Server.Types.ReadOnlyMode,
     soEnableMetadataQueryLogging :: Server.Logging.MetadataQueryLoggingMode,
+    soHttpLogQueryOnlyOnError :: Server.Logging.HttpLogQueryOnlyOnError,
     soDefaultNamingConvention :: NamingCase,
     soExtensionsSchema :: MonadTx.ExtensionsSchema,
     soMetadataDefaults :: MetadataDefaults,
@@ -648,7 +666,8 @@ data ServeOptions impl = ServeOptions
     soRemoteSchemaResponsePriority :: Server.Types.RemoteSchemaResponsePriority,
     soHeaderPrecedence :: Server.Types.HeaderPrecedence,
     soTraceQueryStatus :: Server.Types.TraceQueryStatus,
-    soDisableNativeQueryValidation :: NativeQuery.Validation.DisableNativeQueryValidation
+    soDisableNativeQueryValidation :: NativeQuery.Validation.DisableNativeQueryValidation,
+    soPreserve401Errors :: Preserve401ErrorsStatus
   }
 
 -- | 'ResponseInternalErrorsConfig' represents the encoding of the
@@ -662,11 +681,14 @@ data ResponseInternalErrorsConfig
   | InternalErrorsDisabled
   deriving (Show, Eq)
 
-shouldIncludeInternal :: RoleName -> ResponseInternalErrorsConfig -> Bool
+shouldIncludeInternal :: RoleName -> ResponseInternalErrorsConfig -> IncludeInternalErrors
 shouldIncludeInternal role = \case
-  InternalErrorsAllRequests -> True
-  InternalErrorsAdminOnly -> role == adminRoleName
-  InternalErrorsDisabled -> False
+  InternalErrorsAllRequests -> IncludeInternalErrors
+  InternalErrorsAdminOnly ->
+    if role == adminRoleName
+      then IncludeInternalErrors
+      else HideInternalErrors
+  InternalErrorsDisabled -> HideInternalErrors
 
 --------------------------------------------------------------------------------
 

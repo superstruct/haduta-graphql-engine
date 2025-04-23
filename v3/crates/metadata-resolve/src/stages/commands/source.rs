@@ -1,20 +1,25 @@
-use crate::helpers::argument::get_argument_mappings;
+use std::sync::Arc;
+
+use crate::helpers::argument::{ArgumentMappingResults, get_argument_mappings};
 use crate::helpers::ndc_validation::{self};
 use crate::helpers::types::{object_type_exists, unwrap_custom_type_name};
 use crate::stages::{
-    boolean_expressions, data_connectors, object_boolean_expressions, scalar_types,
+    boolean_expressions, data_connector_scalar_types, data_connectors, scalar_types,
     type_permissions,
 };
-use crate::types::error::Error;
 use crate::types::subgraph::Qualified;
 
+use super::types::CommandsIssue;
 pub use super::types::{Command, CommandSource};
 use open_dds::commands::{self, DataConnectorCommand};
 
+use open_dds::data_connector::DataConnectorName;
+use open_dds::identifier::SubgraphName;
 use open_dds::types::{CustomTypeName, DataConnectorArgumentName};
 
 use std::collections::BTreeMap;
 
+use super::error::CommandsError;
 use crate::helpers::type_mappings::{self, SpecialCaseTypeMapping};
 
 struct CommandSourceResponse {
@@ -25,32 +30,30 @@ struct CommandSourceResponse {
 pub fn resolve_command_source(
     command_source: &commands::CommandSource,
     command: &Command,
-    subgraph: &str,
+    subgraph: &SubgraphName,
     data_connectors: &data_connectors::DataConnectors,
+    data_connector_scalars: &BTreeMap<
+        Qualified<DataConnectorName>,
+        data_connector_scalar_types::DataConnectorScalars,
+    >,
     object_types: &type_permissions::ObjectTypesWithPermissions,
     scalar_types: &BTreeMap<Qualified<CustomTypeName>, scalar_types::ScalarTypeRepresentation>,
-    object_boolean_expression_types: &BTreeMap<
-        Qualified<CustomTypeName>,
-        object_boolean_expressions::ObjectBooleanExpressionType,
-    >,
     boolean_expression_types: &boolean_expressions::BooleanExpressionTypes,
-) -> Result<CommandSource, Error> {
+) -> Result<(CommandSource, Vec<CommandsIssue>), CommandsError> {
     if command.source.is_some() {
-        return Err(Error::DuplicateCommandSourceDefinition {
+        return Err(CommandsError::DuplicateCommandSourceDefinition {
             command_name: command.name.clone(),
         });
     }
 
     // check if data_connector for the command exists
-    let qualified_data_connector_name = Qualified::new(
-        subgraph.to_string(),
-        command_source.data_connector_name.clone(),
-    );
+    let qualified_data_connector_name =
+        Qualified::new(subgraph.clone(), command_source.data_connector_name.clone());
 
     let data_connector_context = data_connectors
         .0
         .get(&qualified_data_connector_name)
-        .ok_or_else(|| Error::UnknownCommandDataConnector {
+        .ok_or_else(|| CommandsError::UnknownCommandDataConnector {
             command_name: command.name.clone(),
             data_connector: qualified_data_connector_name.clone(),
         })?;
@@ -63,7 +66,7 @@ pub fn resolve_command_source(
                 .schema
                 .procedures
                 .get(procedure)
-                .ok_or_else(|| Error::UnknownCommandProcedure {
+                .ok_or_else(|| CommandsError::UnknownCommandProcedure {
                     command_name: command.name.clone(),
                     data_connector: qualified_data_connector_name.clone(),
                     procedure: procedure.clone(),
@@ -88,7 +91,7 @@ pub fn resolve_command_source(
                 .schema
                 .functions
                 .get(function)
-                .ok_or_else(|| Error::UnknownCommandFunction {
+                .ok_or_else(|| CommandsError::UnknownCommandFunction {
                     command_name: command.name.clone(),
                     data_connector: qualified_data_connector_name.clone(),
                     function: function.clone(),
@@ -110,19 +113,32 @@ pub fn resolve_command_source(
         }
     };
 
+    let data_connector_scalar_types = data_connector_scalars
+        .get(&qualified_data_connector_name)
+        .ok_or_else(|| CommandsError::UnknownCommandDataConnector {
+            command_name: command.name.clone(),
+            data_connector: qualified_data_connector_name.clone(),
+        })?;
+
     // Get the mappings of arguments and any type mappings that need resolving from the arguments
-    let (argument_mappings, argument_type_mappings_to_resolve) = get_argument_mappings(
+    let ArgumentMappingResults {
+        argument_mappings,
+        data_connector_link_argument_presets,
+        argument_type_mappings_to_resolve,
+        issues,
+    } = get_argument_mappings(
         &command.arguments,
         &command_source.argument_mapping,
         &command_source_response.arguments,
+        data_connector_context,
+        data_connector_scalar_types,
         object_types,
         scalar_types,
-        object_boolean_expression_types,
         boolean_expression_types,
     )
     .map_err(|err| match &command_source.data_connector_command {
         DataConnectorCommand::Function(function_name) => {
-            Error::CommandFunctionArgumentMappingError {
+            CommandsError::CommandFunctionArgumentMappingError {
                 data_connector_name: qualified_data_connector_name.clone(),
                 command_name: command.name.clone(),
                 function_name: function_name.clone(),
@@ -130,7 +146,7 @@ pub fn resolve_command_source(
             }
         }
         DataConnectorCommand::Procedure(procedure_name) => {
-            Error::CommandProcedureArgumentMappingError {
+            CommandsError::CommandProcedureArgumentMappingError {
                 data_connector_name: qualified_data_connector_name.clone(),
                 command_name: command.name.clone(),
                 procedure_name: procedure_name.clone(),
@@ -138,6 +154,28 @@ pub fn resolve_command_source(
             }
         }
     })?;
+
+    let issues = issues
+        .into_iter()
+        .map(|issue| match &command_source.data_connector_command {
+            DataConnectorCommand::Function(function_name) => {
+                CommandsIssue::FunctionArgumentMappingIssue {
+                    data_connector_name: qualified_data_connector_name.clone(),
+                    command_name: command.name.clone(),
+                    function_name: function_name.clone(),
+                    issue,
+                }
+            }
+            DataConnectorCommand::Procedure(procedure_name) => {
+                CommandsIssue::ProcedureArgumentMappingIssue {
+                    data_connector_name: qualified_data_connector_name.clone(),
+                    command_name: command.name.clone(),
+                    procedure_name: procedure_name.clone(),
+                    issue,
+                }
+            }
+        })
+        .collect();
 
     // get object type name if it exists for the output type, and refers to a valid object
     let command_result_base_object_type_name = unwrap_custom_type_name(&command.output_type)
@@ -158,7 +196,7 @@ pub fn resolve_command_source(
                 ndc_object_type_name: source_result_type_name,
             };
 
-            Ok::<_, Error>(source_result_type_mapping_to_resolve)
+            Ok::<_, CommandsError>(source_result_type_mapping_to_resolve)
         })
         .transpose()?;
 
@@ -171,7 +209,7 @@ pub fn resolve_command_source(
                 .schema
                 .object_types
                 .get(ndc_type_name)
-                .ok_or_else(|| Error::CommandTypeMappingCollectionError {
+                .ok_or_else(|| CommandsError::CommandTypeMappingCollectionError {
                     command_name: command.name.clone(),
                     error: type_mappings::TypeMappingCollectionError::NDCValidationError(
                         crate::NDCValidationError::NoSuchType(ndc_type_name.as_str().to_owned()),
@@ -201,9 +239,9 @@ pub fn resolve_command_source(
             object_types,
             scalar_types,
             &mut type_mappings,
-            &special_case,
+            special_case.as_ref(),
         )
-        .map_err(|error| Error::CommandTypeMappingCollectionError {
+        .map_err(|error| CommandsError::CommandTypeMappingCollectionError {
             command_name: command.name.clone(),
             error,
         })?;
@@ -213,11 +251,13 @@ pub fn resolve_command_source(
         data_connector: data_connectors::DataConnectorLink::new(
             qualified_data_connector_name,
             data_connector_context,
-        )?,
+        )
+        .map(Arc::new)?,
         source: command_source.data_connector_command.clone(),
         ndc_type_opendd_type_same: true,
         type_mappings,
         argument_mappings,
+        data_connector_link_argument_presets,
         source_arguments: command_source_response.arguments,
     };
 
@@ -232,5 +272,5 @@ pub fn resolve_command_source(
 
     command_source.ndc_type_opendd_type_same = source_type_opendd_type_same;
 
-    Ok(command_source)
+    Ok((command_source, issues))
 }

@@ -1,13 +1,11 @@
 use crate::stages::{object_types, scalar_types, type_permissions};
 
 use crate::data_connectors::CommandsResponseConfig;
-use crate::helpers::ndc_validation::{get_underlying_named_type, NDCValidationError};
+use crate::helpers::ndc_validation::{NDCValidationError, get_underlying_named_type};
 use crate::helpers::types::{object_type_exists, unwrap_custom_type_name};
 use crate::types::subgraph::Qualified;
-
 use open_dds::data_connector::{DataConnectorName, DataConnectorObjectType};
 use open_dds::types::{CustomTypeName, FieldName};
-
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
@@ -18,25 +16,35 @@ pub struct TypeMappingToCollect<'a> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum TypeMappingCollectionError {
-    #[error("No mapping defined for type {type_name:} to object {ndc_type_name:} of data connector {data_connector:}")]
+    #[error(
+        "No mapping defined for type {type_name:} to object {ndc_type_name:} of data connector {data_connector:}"
+    )]
     MappingNotDefined {
         type_name: Qualified<CustomTypeName>,
         data_connector: Qualified<DataConnectorName>,
         ndc_type_name: DataConnectorObjectType,
     },
-    #[error("No support for using the same type {type_name:} against multiple data connector objects {ndc_type_1:} and {ndc_type_2:}")]
+    #[error(
+        "No support for using the same type {type_name:} against multiple data connector objects {ndc_type_1:} and {ndc_type_2:}"
+    )]
     MappingToMultipleDataConnectorObjectType {
         type_name: Qualified<CustomTypeName>,
         ndc_type_1: DataConnectorObjectType,
         ndc_type_2: DataConnectorObjectType,
     },
-    #[error("Missing mapping for field {field_name:} when mapping type {type_name:} to object {ndc_type_name:} of data connector {data_connector:}")]
+    #[error(
+        "Missing mapping for field {field_name:} when mapping type {type_name:} to object {ndc_type_name:} of data connector {data_connector:}"
+    )]
     MissingFieldMapping {
         type_name: Qualified<CustomTypeName>,
         field_name: FieldName,
         data_connector: Qualified<DataConnectorName>,
         ndc_type_name: DataConnectorObjectType,
     },
+
+    #[error("Cannot return a predicate type from a command")]
+    PredicateAsResponseType,
+
     #[error("Internal Error: Unknown type {type_name:} when collecting type mappings")]
     InternalUnknownType {
         type_name: Qualified<CustomTypeName>,
@@ -59,7 +67,7 @@ pub(crate) fn collect_type_mapping_for_source(
     object_types: &type_permissions::ObjectTypesWithPermissions,
     scalar_types: &BTreeMap<Qualified<CustomTypeName>, scalar_types::ScalarTypeRepresentation>,
     collected_mappings: &mut BTreeMap<Qualified<CustomTypeName>, object_types::TypeMapping>,
-    special_case: &Option<SpecialCaseTypeMapping>,
+    special_case: Option<&SpecialCaseTypeMapping>,
 ) -> Result<(), TypeMappingCollectionError> {
     match object_types.get(mapping_to_collect.type_name).ok() {
         Some(object_type_representation) => {
@@ -156,7 +164,7 @@ fn handle_special_case_type_mapping<'a>(
     mapping_to_collect: &TypeMappingToCollect,
     data_connector_name: &Qualified<DataConnectorName>,
     object_type_representation: &'a type_permissions::ObjectTypeWithPermissions,
-    special_case: &Option<SpecialCaseTypeMapping>,
+    special_case: Option<&SpecialCaseTypeMapping>,
 ) -> Result<&'a object_types::TypeMapping, TypeMappingCollectionError> {
     if let Some(SpecialCaseTypeMapping {
         response_config,
@@ -175,7 +183,10 @@ fn handle_special_case_type_mapping<'a>(
                 .get(response_config.result_field.as_str())
                 .unwrap()
                 .r#type;
-            let ndc_object_type_name = unwrap_ndc_object_type_name(ndc_object_type);
+
+            // get the type found in `response` field, and look up it's type mappings too
+            let ndc_object_type_name = unwrap_ndc_object_type_name(ndc_object_type)?;
+
             object_type_representation
                 .type_mappings
                 .get(data_connector_name, ndc_object_type_name.as_str())
@@ -206,14 +217,17 @@ fn handle_special_case_type_mapping<'a>(
     }
 }
 
-fn unwrap_ndc_object_type_name(ndc_type: &ndc_models::Type) -> &ndc_models::TypeName {
+fn unwrap_ndc_object_type_name(
+    ndc_type: &ndc_models::Type,
+) -> Result<&ndc_models::TypeName, TypeMappingCollectionError> {
     match ndc_type {
-        ndc_models::Type::Named { name } => name,
+        ndc_models::Type::Named { name } => Ok(name),
         ndc_models::Type::Nullable { underlying_type } => {
             unwrap_ndc_object_type_name(underlying_type)
         }
-        ndc_models::Type::Array { .. } | ndc_models::Type::Predicate { .. } => {
-            panic!("unexpected ndc type; only object is supported")
+        ndc_models::Type::Array { element_type } => unwrap_ndc_object_type_name(element_type),
+        ndc_models::Type::Predicate { .. } => {
+            Err(TypeMappingCollectionError::PredicateAsResponseType)
         }
     }
 }

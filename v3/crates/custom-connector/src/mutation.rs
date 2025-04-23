@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use axum::{http::StatusCode, Json};
+use axum::{Json, http::StatusCode};
 use ndc_models;
 
 use crate::{procedures, state::AppState};
@@ -38,7 +38,7 @@ fn execute_mutation_operation(
         } => procedures::execute_procedure(
             name,
             arguments,
-            fields,
+            fields.as_ref(),
             collection_relationships,
             &mut state,
         )

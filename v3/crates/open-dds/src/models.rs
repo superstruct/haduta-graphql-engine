@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    Spanned,
     aggregates::AggregateExpressionName,
     arguments::ArgumentDefinition,
     commands::ArgumentMapping,
@@ -26,7 +27,6 @@ str_newtype!(ModelName over Identifier | doc "The name of data model.");
 )]
 pub enum Model {
     V1(ModelV1),
-    #[opendd(hidden = true)]
     V2(ModelV2),
 }
 
@@ -90,24 +90,76 @@ impl Model {
         })
     }
 
-    pub fn upgrade(self) -> ModelV1 {
-        match self {
-            Model::V1(v1) => v1,
-            Model::V2(_) => todo!("ModelV2 not yet supported"), // TODO(dmoverton) see comment below
-        }
-    }
-
-    // TODO(dmoverton):
     // Upgrading from ModelV1 to ModelV2 requires creating a new OrderByExpression
     // We don't want to confuse the user by generating the new types and then validating against them
     // instead of the original types.
-    // Therefore, we want to defer the upgrade until the metadata resolve step.
-    // To do this, the input to metadata resolve will need to be `Model` rather than `ModelV1` or `ModelV2`.
-    // The `upgrade` function should change to the below, and the
-    // type of `MetadataAccessor.models` should become `Vec<QualifiedObject<models::Model>>`
-    // pub fn upgrade(self) -> Model {
-    //     self
-    // }
+    // Therefore, we defer the upgrade until the metadata resolve step.
+    pub fn upgrade(self) -> Model {
+        self
+    }
+
+    pub fn name(&self) -> &ModelName {
+        match self {
+            Model::V1(v1) => &v1.name,
+            Model::V2(v2) => &v2.name,
+        }
+    }
+
+    pub fn object_type(&self) -> &Spanned<CustomTypeName> {
+        match self {
+            Model::V1(v1) => &v1.object_type,
+            Model::V2(v2) => &v2.object_type,
+        }
+    }
+
+    pub fn global_id_source(&self) -> bool {
+        match self {
+            Model::V1(v1) => v1.global_id_source,
+            Model::V2(v2) => v2.global_id_source,
+        }
+    }
+
+    pub fn arguments(&self) -> &Vec<ArgumentDefinition> {
+        match self {
+            Model::V1(v1) => &v1.arguments,
+            Model::V2(v2) => &v2.arguments,
+        }
+    }
+
+    pub fn source(&self) -> &Option<ModelSource> {
+        match self {
+            Model::V1(v1) => &v1.source,
+            Model::V2(v2) => &v2.source,
+        }
+    }
+
+    pub fn filter_expression_type(&self) -> &Option<CustomTypeName> {
+        match self {
+            Model::V1(v1) => &v1.filter_expression_type,
+            Model::V2(v2) => &v2.filter_expression_type,
+        }
+    }
+
+    pub fn aggregate_expression(&self) -> &Option<AggregateExpressionName> {
+        match self {
+            Model::V1(v1) => &v1.aggregate_expression,
+            Model::V2(v2) => &v2.aggregate_expression,
+        }
+    }
+
+    pub fn graphql(&self) -> Option<ModelGraphQlDefinitionV2> {
+        match self {
+            Model::V1(v1) => v1.graphql.clone().map(ModelGraphQlDefinition::upgrade),
+            Model::V2(v2) => v2.graphql.clone(),
+        }
+    }
+
+    pub fn description(&self) -> &Option<String> {
+        match self {
+            Model::V1(v1) => &v1.description,
+            Model::V2(v2) => &v2.description,
+        }
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
@@ -119,7 +171,7 @@ pub struct ModelV1 {
     /// The name of the data model.
     pub name: ModelName,
     /// The type of the objects of which this model is a collection.
-    pub object_type: CustomTypeName,
+    pub object_type: Spanned<CustomTypeName>,
     /// Whether this model should be used as the global ID source for all objects of its type.
     #[opendd(default)]
     pub global_id_source: bool,
@@ -151,7 +203,7 @@ pub struct ModelV2 {
     /// The name of the data model.
     pub name: ModelName,
     /// The type of the objects of which this model is a collection.
-    pub object_type: CustomTypeName,
+    pub object_type: Spanned<CustomTypeName>,
     /// Whether this model should be used as the global ID source for all objects of its type.
     #[opendd(default)]
     pub global_id_source: bool,
@@ -179,10 +231,10 @@ pub struct ModelV2 {
 /// Description of how a model maps to a particular data connector
 pub struct ModelSource {
     /// The name of the data connector backing this model.
-    pub data_connector_name: DataConnectorName,
+    pub data_connector_name: Spanned<DataConnectorName>,
 
     /// The collection in the data connector that backs this model.
-    pub collection: CollectionName,
+    pub collection: Spanned<CollectionName>,
 
     /// Mapping from model argument names to data connector collection argument names.
     #[opendd(default)]
@@ -250,6 +302,17 @@ impl ModelGraphQlDefinition {
                 "description": "Aggregate over Articles"
             }
         })
+    }
+
+    pub fn upgrade(self) -> ModelGraphQlDefinitionV2 {
+        ModelGraphQlDefinitionV2 {
+            select_uniques: self.select_uniques,
+            select_many: self.select_many,
+            arguments_input_type: self.arguments_input_type,
+            apollo_federation: self.apollo_federation,
+            filter_input_type_name: self.filter_input_type_name,
+            aggregate: self.aggregate,
+        }
     }
 }
 
@@ -320,6 +383,8 @@ pub struct SelectUniqueGraphQlDefinition {
     /// Whether this select unique query field is deprecated.
     /// If set, the deprecation status is added to the select unique root field's graphql schema.
     pub deprecated: Option<Deprecated>,
+    /// Enable subscription on this select unique root field.
+    pub subscription: Option<SubscriptionGraphQlDefinition>,
 }
 
 /// The definition of the GraphQL API for selecting rows from a model.
@@ -335,8 +400,29 @@ pub struct SelectManyGraphQlDefinition {
     /// Whether this select many query field is deprecated.
     /// If set, the deprecation status is added to the select many root field's graphql schema.
     pub deprecated: Option<Deprecated>,
+    /// Enable subscription on this select many root field.
+    pub subscription: Option<SubscriptionGraphQlDefinition>,
 }
 
+/// The definition of the GraphQL API for enabling subscription on query root fields.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
+#[serde(rename_all = "camelCase")]
+#[opendd(json_schema(title = "SubscriptionGraphQlDefinition"))]
+pub struct SubscriptionGraphQlDefinition {
+    /// The name of the subscription root field.
+    pub root_field: GraphQlFieldName,
+    /// The description of the subscription graphql definition.
+    /// Gets added to the description of the subscription root field in the graphql schema.
+    pub description: Option<String>,
+    /// Whether this subscription root field is deprecated.
+    /// If set, the deprecation status is added to the subscription root field's graphql schema.
+    pub deprecated: Option<Deprecated>,
+    /// Polling interval in milliseconds for the subscription.
+    #[opendd(default = 1000)]
+    pub polling_interval_ms: u64,
+}
+
+/// A field that can be used to order the objects in a model.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -346,6 +432,7 @@ pub struct OrderableField {
     pub order_by_directions: EnableAllOrSpecific<OrderByDirection>,
 }
 
+/// Enable all or specific values.
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[schemars(title = "EnableAllOrSpecific")]
@@ -355,15 +442,18 @@ pub enum EnableAllOrSpecific<T> {
 }
 
 impl<'de, T: serde::Deserialize<'de> + JsonSchema> OpenDd for EnableAllOrSpecific<T> {
-    fn deserialize(json: serde_json::Value) -> Result<Self, OpenDdDeserializeError> {
+    fn deserialize(
+        json: serde_json::Value,
+        _path: jsonpath::JSONPath,
+    ) -> Result<Self, OpenDdDeserializeError> {
         serde_path_to_error::deserialize(json).map_err(|e| OpenDdDeserializeError {
-            path: open_dds::traits::JSONPath::from_serde_path(e.path()),
+            path: jsonpath::JSONPath::from_serde_path(e.path()),
             error: e.into_inner(),
         })
     }
 
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        <Self as ::schemars::JsonSchema>::json_schema(gen)
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        <Self as ::schemars::JsonSchema>::json_schema(generator)
     }
 
     fn _schema_name() -> String {
@@ -384,6 +474,7 @@ pub enum OrderByDirection {
     Desc,
 }
 
+/// Apollo Federation configuration for a model.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -393,6 +484,7 @@ pub struct ModelApolloFederationConfiguration {
     pub entity_source: bool,
 }
 
+/// The definition of the GraphQL API for aggregating over a model.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -406,4 +498,6 @@ pub struct ModelAggregateGraphQlDefinition {
     /// Whether this aggregate query field is deprecated.
     /// If set, the deprecation status is added to the aggregate root field's graphql schema.
     pub deprecated: Option<Deprecated>,
+    /// Enable subscription on this aggregate root field.
+    pub subscription: Option<SubscriptionGraphQlDefinition>,
 }

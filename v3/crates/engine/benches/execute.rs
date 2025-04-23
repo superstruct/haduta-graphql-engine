@@ -1,16 +1,19 @@
 use core::time::Duration;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
-use execute::{execute_mutation_plan, execute_query_plan, generate_request_plan};
-use execute::{execute_query_internal, generate_ir, HttpContext};
+use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
+use engine_types::{ExposeInternalErrors, HttpContext};
+use graphql_frontend::{
+    execute_mutation_plan, execute_query_internal, execute_query_plan, generate_ir,
+};
+use graphql_ir::{RequestPlan, generate_request_plan};
+use graphql_schema::GDS;
 use hasura_authn_core::Identity;
 use lang_graphql::http::RawRequest;
 use open_dds::permissions::Role;
-use schema::GDS;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
-
 extern crate json_value_merge;
 use json_value_merge::Merge;
 use serde_json::Value;
@@ -18,6 +21,10 @@ use serde_json::Value;
 use std::path::Path;
 
 use lang_graphql as gql;
+
+// match allocator used by engine binary
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub fn merge_with_common_metadata(
     common_metadata_path: &Path,
@@ -46,9 +53,27 @@ pub fn bench_execute(
     let metadata_path = test_path.join("metadata.json");
     let metadata = merge_with_common_metadata(&metadata_path, &common_metadata_path);
 
-    let gds = GDS::new_with_default_flags(open_dds::traits::OpenDd::deserialize(metadata).unwrap())
-        .unwrap();
-    let schema = GDS::build_schema(&gds).unwrap();
+    let (resolved_metadata, _) = metadata_resolve::resolve(
+        open_dds::traits::OpenDd::deserialize(metadata, jsonpath::JSONPath::new()).unwrap(),
+        &metadata_resolve::configuration::Configuration::default(),
+    )
+    .unwrap();
+
+    let validate_non_null_graphql_variables = if resolved_metadata
+        .runtime_flags
+        .contains(metadata_resolve::flags::ResolvedRuntimeFlag::ValidateNonNullGraphqlVariables)
+    {
+        gql::validation::NonNullGraphqlVariablesValidation::Validate
+    } else {
+        gql::validation::NonNullGraphqlVariablesValidation::DoNotValidate
+    };
+
+    let gds = GDS {
+        metadata: Arc::new(resolved_metadata.clone()),
+    };
+
+    let schema = gds.build_schema().unwrap();
+
     let http_context = HttpContext {
         client: reqwest::Client::new(),
         ndc_response_size_limit: None,
@@ -66,13 +91,14 @@ pub fn bench_execute(
     let session = Identity::admin(Role::new("admin"))
         .get_role_authorization(None)
         .unwrap()
-        .build_session(HashMap::new());
+        .build_session(BTreeMap::new());
 
     let mut group = c.benchmark_group(benchmark_group);
 
     // these numbers are fairly low, optimising for runtime of benchmark suite
-    group.warm_up_time(Duration::from_millis(500));
-    group.sample_size(20);
+    group.warm_up_time(Duration::from_millis(100));
+    group.sample_size(1000);
+    group.measurement_time(Duration::from_secs(5));
     group.sampling_mode(SamplingMode::Flat);
 
     // Parse request
@@ -96,7 +122,7 @@ pub fn bench_execute(
     let request = gql::http::Request {
         operation_name: None,
         query,
-        variables: HashMap::default(),
+        variables: BTreeMap::default(),
     };
 
     group.bench_with_input(
@@ -105,11 +131,12 @@ pub fn bench_execute(
         |b, (runtime, schema, request)| {
             b.to_async(*runtime).iter(|| async {
                 gql::validation::normalize_request(
-                    &schema::GDSRoleNamespaceGetter {
+                    &graphql_schema::GDSRoleNamespaceGetter {
                         scope: session.role.clone(),
                     },
                     schema,
                     request,
+                    validate_non_null_graphql_variables,
                 )
                 .unwrap();
             });
@@ -117,11 +144,12 @@ pub fn bench_execute(
     );
 
     let normalized_request = gql::validation::normalize_request(
-        &schema::GDSRoleNamespaceGetter {
+        &graphql_schema::GDSRoleNamespaceGetter {
             scope: session.role.clone(),
         },
         &schema,
         &request,
+        validate_non_null_graphql_variables,
     )
     .unwrap();
 
@@ -131,20 +159,35 @@ pub fn bench_execute(
         &(&runtime, &schema),
         |b, (runtime, schema)| {
             b.to_async(*runtime).iter(|| async {
-                generate_ir(schema, &session, &request_headers, &normalized_request).unwrap()
+                generate_ir(
+                    schema,
+                    &gds.metadata,
+                    &session,
+                    &request_headers,
+                    &normalized_request,
+                )
+                .unwrap()
             });
         },
     );
 
-    let ir = generate_ir(&schema, &session, &request_headers, &normalized_request).unwrap();
+    let ir = generate_ir(
+        &schema,
+        &gds.metadata,
+        &session,
+        &request_headers,
+        &normalized_request,
+    )
+    .unwrap();
 
     // Generate Query Plan
     group.bench_with_input(
         BenchmarkId::new("bench_execute", "Generate Query Plan"),
         &(&runtime),
         |b, runtime| {
-            b.to_async(*runtime)
-                .iter(|| async { generate_request_plan(&ir).unwrap() });
+            b.to_async(*runtime).iter(|| async {
+                generate_request_plan(&ir, &resolved_metadata, &session, &request_headers).unwrap()
+            });
         },
     );
 
@@ -154,12 +197,28 @@ pub fn bench_execute(
         &(&runtime),
         |b, runtime| {
             b.to_async(*runtime).iter(|| async {
-                match generate_request_plan(&ir).unwrap() {
-                    execute::RequestPlan::QueryPlan(query_plan) => {
-                        execute_query_plan(&http_context, query_plan, None).await
+                match generate_request_plan(&ir, &resolved_metadata, &session, &request_headers)
+                    .unwrap()
+                {
+                    RequestPlan::QueryPlan(query_plan) => {
+                        let execute_query_result =
+                            execute_query_plan(&http_context, query_plan, None).await;
+                        assert!(
+                            !execute_query_result.root_fields.is_empty(),
+                            "IndexMap is empty!"
+                        );
                     }
-                    execute::RequestPlan::MutationPlan(mutation_plan) => {
-                        execute_mutation_plan(&http_context, mutation_plan, None).await
+                    RequestPlan::MutationPlan(mutation_plan) => {
+                        let execute_query_result =
+                            execute_mutation_plan(&http_context, mutation_plan, None).await;
+                        assert!(
+                            !execute_query_result.root_fields.is_empty(),
+                            "IndexMap is empty!"
+                        );
+                    }
+                    RequestPlan::SubscriptionPlan(_alias, _subscription_plan) => {
+                        // subscriptions are not supported
+                        panic!("subscriptions not expected here")
                     }
                 }
             });
@@ -173,9 +232,10 @@ pub fn bench_execute(
         |b, (runtime, schema, request)| {
             b.to_async(*runtime).iter(|| async {
                 execute_query_internal(
-                    execute::ExposeInternalErrors::Expose,
+                    ExposeInternalErrors::Expose,
                     &http_context,
                     schema,
+                    &resolved_metadata.clone().into(),
                     &session,
                     &request_headers,
                     request.clone(),
@@ -193,7 +253,8 @@ pub fn bench_execute(
 fn bench_execute_all(c: &mut Criterion) {
     // Simple select
     let test_path_string = "execute/models/select_one/simple_select";
-    let common_metadata_path_string = "execute/common_metadata/postgres_connector_schema.json";
+    let common_metadata_path_string =
+        "execute/common_metadata/postgres_connector_ndc_v01_schema.json";
     bench_execute(
         c,
         test_path_string,
@@ -203,7 +264,8 @@ fn bench_execute_all(c: &mut Criterion) {
 
     // Select Many
     let test_path_string = "execute/models/select_many/simple_select";
-    let common_metadata_path_string = "execute/common_metadata/postgres_connector_schema.json";
+    let common_metadata_path_string =
+        "execute/common_metadata/postgres_connector_ndc_v01_schema.json";
     bench_execute(
         c,
         test_path_string,
@@ -213,7 +275,8 @@ fn bench_execute_all(c: &mut Criterion) {
 
     // Select Many with where clause
     let test_path_string = "execute/models/select_many/where/simple";
-    let common_metadata_path_string = "execute/common_metadata/postgres_connector_schema.json";
+    let common_metadata_path_string =
+        "execute/common_metadata/postgres_connector_ndc_v01_schema.json";
     bench_execute(
         c,
         test_path_string,
@@ -223,7 +286,8 @@ fn bench_execute_all(c: &mut Criterion) {
 
     // Object Relationships
     let test_path_string = "execute/relationships/object";
-    let common_metadata_path_string = "execute/common_metadata/postgres_connector_schema.json";
+    let common_metadata_path_string =
+        "execute/common_metadata/postgres_connector_ndc_v01_schema.json";
     bench_execute(
         c,
         test_path_string,
@@ -233,7 +297,8 @@ fn bench_execute_all(c: &mut Criterion) {
 
     // Array Relationships
     let test_path_string = "execute/relationships/array";
-    let common_metadata_path_string = "execute/common_metadata/postgres_connector_schema.json";
+    let common_metadata_path_string =
+        "execute/common_metadata/postgres_connector_ndc_v01_schema.json";
     bench_execute(
         c,
         test_path_string,
@@ -243,7 +308,8 @@ fn bench_execute_all(c: &mut Criterion) {
 
     // Relay node field
     let test_path_string = "execute/relay/relay";
-    let common_metadata_path_string = "execute/common_metadata/postgres_connector_schema.json";
+    let common_metadata_path_string =
+        "execute/common_metadata/postgres_connector_ndc_v01_schema.json";
     bench_execute(
         c,
         test_path_string,

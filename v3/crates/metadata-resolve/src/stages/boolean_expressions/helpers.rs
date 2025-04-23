@@ -1,8 +1,9 @@
 use open_dds::{boolean_expression::BooleanExpressionLogicalOperators, types::CustomTypeName};
 
+use crate::types::subgraph::Qualified;
+
 use super::error::BooleanExpressionError;
 use super::types::IncludeLogicalOperators;
-use crate::Qualified;
 
 pub(crate) fn lookup_raw_boolean_expression<'a>(
     parent_boolean_expression_name: &Qualified<CustomTypeName>,
@@ -10,7 +11,7 @@ pub(crate) fn lookup_raw_boolean_expression<'a>(
     raw_boolean_expression_types: &'a super::object::RawBooleanExpressionTypes<'a>,
 ) -> Result<
     &'a (
-        &'a open_dds::identifier::SubgraphIdentifier,
+        &'a open_dds::identifier::SubgraphName,
         &'a open_dds::boolean_expression::BooleanExpressionTypeV1,
     ),
     BooleanExpressionError,

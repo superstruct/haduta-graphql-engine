@@ -1,17 +1,31 @@
 use std::fmt::Display;
 use std::{collections::BTreeMap, fmt::Write};
 
+use jsonpath::JSONPath;
+use open_dds::identifier::SubgraphName;
+use open_dds::spanned::Spanned;
 use open_dds::types::{BaseType, CustomTypeName, InbuiltType, TypeName, TypeReference};
 use schemars::JsonSchema;
-use serde::{de::DeserializeOwned, ser::SerializeMap, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned, ser::SerializeMap};
 use serde_json;
 
 #[derive(
     Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, Hash, Eq, PartialOrd, Ord,
 )]
 pub struct Qualified<T: Display> {
-    pub subgraph: String,
+    #[serde(default = "subgraph_default")]
+    #[serde(skip_serializing_if = "is_subgraph_default")]
+    pub subgraph: SubgraphName,
     pub name: T,
+}
+
+fn subgraph_default() -> SubgraphName {
+    SubgraphName::new_inline_static("default")
+}
+
+fn is_subgraph_default(x: &SubgraphName) -> bool {
+    static D: SubgraphName = SubgraphName::new_inline_static("default");
+    *x == D
 }
 
 impl<T: Display> Display for Qualified<T> {
@@ -22,7 +36,7 @@ impl<T: Display> Display for Qualified<T> {
 }
 
 impl<T: Display> Qualified<T> {
-    pub fn new(subgraph: String, name: T) -> Self {
+    pub fn new(subgraph: SubgraphName, name: T) -> Self {
         Qualified { subgraph, name }
     }
 
@@ -37,9 +51,23 @@ impl<T: Display> Qualified<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Hash, Eq)]
+impl<T: Display> Qualified<Spanned<T>> {
+    pub fn transpose_spanned(self) -> Spanned<Qualified<T>> {
+        Spanned {
+            path: self.name.path,
+            value: Qualified {
+                subgraph: self.subgraph,
+                name: self.name.value,
+            },
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Hash, Eq, JsonSchema)]
 pub struct QualifiedTypeReference {
     pub underlying_type: QualifiedBaseType,
+    #[serde(default = "serde_ext::ser_default::<bool>")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub nullable: bool,
 }
 
@@ -71,6 +99,27 @@ impl QualifiedTypeReference {
             QualifiedBaseType::Named(type_name) => type_name,
         }
     }
+
+    /// Check if this type is an array type
+    pub fn is_array_type(&self) -> bool {
+        matches!(self.underlying_type, QualifiedBaseType::List(_))
+    }
+
+    pub fn is_multidimensional_array_type(&self) -> bool {
+        match &self.underlying_type {
+            QualifiedBaseType::List(inner_type) => {
+                matches!(inner_type.underlying_type, QualifiedBaseType::List(_))
+            }
+            QualifiedBaseType::Named(_) => false,
+        }
+    }
+
+    pub fn get_subgraph(&self) -> Option<&SubgraphName> {
+        match self.get_underlying_type_name() {
+            QualifiedTypeName::Inbuilt(_inbuilt_type) => None,
+            QualifiedTypeName::Custom(qualified) => Some(&qualified.subgraph),
+        }
+    }
 }
 
 // should this argument be converted into an NDC expression
@@ -85,9 +134,10 @@ pub struct ArgumentInfo {
     pub argument_type: QualifiedTypeReference,
     pub description: Option<String>,
     pub argument_kind: ArgumentKind,
+    pub path: JSONPath,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Hash, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Hash, Eq, JsonSchema)]
 pub enum QualifiedBaseType {
     Named(QualifiedTypeName),
     List(Box<QualifiedTypeReference>),
@@ -119,7 +169,9 @@ impl QualifiedBaseType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Hash, Eq)]
+#[derive(
+    Serialize, Deserialize, Clone, Debug, PartialEq, PartialOrd, Ord, Hash, Eq, JsonSchema,
+)]
 pub enum QualifiedTypeName {
     Inbuilt(InbuiltType),
     Custom(Qualified<CustomTypeName>),
@@ -147,12 +199,37 @@ impl QualifiedTypeName {
             QualifiedTypeName::Custom(custom_type) => custom_type.fmt_and_return_qualifier(f),
         }
     }
+
+    pub fn to_untagged(&self) -> UnTaggedQualifiedTypeName {
+        match self {
+            QualifiedTypeName::Inbuilt(inbuilt_type) => {
+                UnTaggedQualifiedTypeName::Inbuilt(*inbuilt_type)
+            }
+            QualifiedTypeName::Custom(custom_type) => {
+                UnTaggedQualifiedTypeName::Custom(custom_type.clone())
+            }
+        }
+    }
+
+    pub fn get_custom_type_name(&self) -> Option<&Qualified<CustomTypeName>> {
+        match self {
+            QualifiedTypeName::Inbuilt(_) => None,
+            QualifiedTypeName::Custom(custom_type) => Some(custom_type),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Hash, Eq, JsonSchema)]
+#[serde(untagged)]
+pub enum UnTaggedQualifiedTypeName {
+    Inbuilt(InbuiltType),
+    Custom(Qualified<CustomTypeName>),
 }
 
 #[allow(dead_code)]
 /// not using this now, but feel we'll need to again
 pub fn serialize_optional_qualified_btreemap<T, V, S>(
-    optional_map: &Option<BTreeMap<Qualified<T>, V>>,
+    optional_map: Option<&BTreeMap<Qualified<T>, V>>,
     s: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -238,7 +315,7 @@ where
 
 pub(crate) fn mk_qualified_type_reference(
     type_reference: &TypeReference,
-    subgraph: &str,
+    subgraph: &SubgraphName,
 ) -> QualifiedTypeReference {
     QualifiedTypeReference {
         nullable: type_reference.nullable,
@@ -246,7 +323,10 @@ pub(crate) fn mk_qualified_type_reference(
     }
 }
 
-pub(crate) fn mk_qualified_base_type(base_type: &BaseType, subgraph: &str) -> QualifiedBaseType {
+pub(crate) fn mk_qualified_base_type(
+    base_type: &BaseType,
+    subgraph: &SubgraphName,
+) -> QualifiedBaseType {
     match base_type {
         BaseType::List(type_reference) => QualifiedBaseType::List(Box::new(
             mk_qualified_type_reference(type_reference, subgraph),
@@ -257,17 +337,21 @@ pub(crate) fn mk_qualified_base_type(base_type: &BaseType, subgraph: &str) -> Qu
     }
 }
 
-pub(crate) fn mk_qualified_type_name(type_name: &TypeName, subgraph: &str) -> QualifiedTypeName {
+pub(crate) fn mk_qualified_type_name(
+    type_name: &TypeName,
+    subgraph: &SubgraphName,
+) -> QualifiedTypeName {
     match type_name {
-        TypeName::Inbuilt(inbuilt_type) => QualifiedTypeName::Inbuilt(inbuilt_type.clone()),
+        TypeName::Inbuilt(inbuilt_type) => QualifiedTypeName::Inbuilt(*inbuilt_type),
         TypeName::Custom(type_name) => {
-            QualifiedTypeName::Custom(Qualified::new(subgraph.to_string(), type_name.to_owned()))
+            QualifiedTypeName::Custom(Qualified::new(subgraph.clone(), type_name.to_owned()))
         }
     }
 }
 
 #[test]
 fn test_btree_map_serialize_deserialize() {
+    use open_dds::subgraph_identifier;
     #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
     struct ObjectForTest {
         #[serde(
@@ -281,7 +365,7 @@ fn test_btree_map_serialize_deserialize() {
         map: BTreeMap::new(),
     };
     obj.map.insert(
-        Qualified::new("subgraph".to_string(), "name".to_string()),
+        Qualified::new(subgraph_identifier!("subgraph"), "name".to_string()),
         "value".to_string(),
     );
     let obj_clone =

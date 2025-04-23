@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use axum::{http::StatusCode, Json};
+use axum::{Json, http::StatusCode};
 use ndc_models;
 
 use crate::{
@@ -46,7 +46,36 @@ pub(crate) fn definition() -> ndc_models::ObjectType {
                     arguments: argument_any(),
                 },
             ),
+            (
+                "favourite_big_integer".into(),
+                ndc_models::ObjectField {
+                    description: Some("The actor's favourite big integer".into()),
+                    r#type: ndc_models::Type::Named {
+                        name: "BigInt".into(),
+                    },
+                    arguments: argument_any(),
+                },
+            ),
+            (
+                "favourite_int_64".into(),
+                ndc_models::ObjectField {
+                    description: Some("The actor's favourite int 64".into()),
+                    r#type: ndc_models::Type::Named {
+                        name: "Int64".into(),
+                    },
+                    arguments: argument_any(),
+                },
+            ),
+            (
+                "country_id".into(),
+                ndc_models::ObjectField {
+                    description: Some("The actor's country of origin".into()),
+                    r#type: ndc_models::Type::Named { name: "Int".into() },
+                    arguments: argument_any(),
+                },
+            ),
         ]),
+        foreign_keys: BTreeMap::new(),
     }
 }
 

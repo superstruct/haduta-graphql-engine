@@ -24,10 +24,10 @@ fn test_passing_metadata() {
             let metadata_json_value = serde_json::from_str(&metadata_json_text)
                 .unwrap_or_else(|error| panic!("{}: Could not parse JSON: {error}",directory.display()));
 
-            let metadata = open_dds::traits::OpenDd::deserialize(metadata_json_value)
+            let metadata = open_dds::traits::OpenDd::deserialize(metadata_json_value, jsonpath::JSONPath::new())
                 .unwrap_or_else(|error| panic!("{}: Could not deserialize metadata: {error}", directory.display()));
 
-            let resolved = metadata_resolve::resolve(metadata, configuration)
+            let resolved = metadata_resolve::resolve(metadata, &configuration)
                 .unwrap_or_else(|error| panic!("{}: Could not resolve metadata: {error}",directory.display()));
 
             insta::assert_debug_snapshot!("resolved", resolved);
@@ -52,14 +52,23 @@ fn test_failing_metadata() {
 
             match serde_json::from_str(&metadata_json_text) {
                 Ok(metadata_json_value) => {
-                    match open_dds::traits::OpenDd::deserialize(metadata_json_value) {
+                    match open_dds::traits::OpenDd::deserialize(metadata_json_value, jsonpath::JSONPath::new()) {
                         Ok(metadata) => {
-                            match metadata_resolve::resolve(metadata, configuration) {
+                            match metadata_resolve::resolve(metadata, &configuration) {
                                 Ok(_) => {
                                     panic!("{}: Unexpected success when resolving {path:?}.", directory.display());
                                 }
                                 Err(msg) => {
-                                    insta::assert_snapshot!("resolve_error", msg);
+                                    let config = ariadne::Config::new().with_color(false);
+
+                                    let reports =  metadata_resolve::to_fancy_errors(metadata_json_text.as_str(),&msg,config);
+                                            // write an ariadne error to a String
+                                            let mut buf = Vec::new();
+                                            for report in reports {
+                                                let () = report.write(ariadne::Source::from(&metadata_json_text),&mut buf).unwrap();
+                                            }
+                                            let string = String::from_utf8(buf).unwrap();
+                                            insta::assert_snapshot!("resolve_error",string);
                                 }
                             }
                         }
@@ -81,22 +90,15 @@ fn read_test_configuration(
     directory: &Path,
 ) -> Result<configuration::Configuration, Box<dyn std::error::Error>> {
     let unstable_features = configuration::UnstableFeatures {
-        enable_order_by_expressions: false,
-        enable_ndc_v02_support: false,
+        enable_aggregation_predicates: true,
     };
 
     let configuration_path = directory.join("configuration.json");
     if configuration_path.exists() {
         let reader = fs::File::open(configuration_path)?;
         let configuration = serde_json::from_reader(reader)?;
-        Ok(configuration::Configuration {
-            unstable_features,
-            ..configuration
-        })
+        Ok(configuration)
     } else {
-        Ok(configuration::Configuration {
-            allow_unknown_subgraphs: false,
-            unstable_features,
-        })
+        Ok(configuration::Configuration { unstable_features })
     }
 }

@@ -3,13 +3,14 @@ use std::net;
 use std::sync::Arc;
 
 use axum::{
+    Json, Router,
     extract::State,
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 
 use custom_connector::state::AppState;
+use ndc_models::{RelationalQuery, RelationalQueryResponse};
 
 type Result<A> = std::result::Result<A, (StatusCode, Json<ndc_models::ErrorResponse>)>;
 
@@ -24,6 +25,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/capabilities", get(get_capabilities))
         .route("/schema", get(get_schema))
         .route("/query", post(post_query))
+        .route("/query/relational", post(post_query_relational))
         .route("/mutation", post(post_mutation))
         .route("/explain", post(post_explain))
         .with_state(app_state);
@@ -32,35 +34,14 @@ async fn main() -> anyhow::Result<()> {
     let host = net::IpAddr::V6(net::Ipv6Addr::UNSPECIFIED);
     let port = 8102;
     let socket_addr = net::SocketAddr::new(host, port);
-    axum::Server::bind(&socket_addr)
-        .serve(app.into_make_service())
-        .with_graceful_shutdown(async {
-            // wait for a SIGINT, i.e. a Ctrl+C from the keyboard
-            let sigint = async {
-                tokio::signal::ctrl_c()
-                    .await
-                    .expect("failed to install signal handler");
-            };
-            // wait for a SIGTERM, i.e. a normal `kill` command
-            #[cfg(unix)]
-            let sigterm = async {
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .expect("failed to install signal handler")
-                    .recv()
-                    .await
-            };
-            // block until either of the above happens
-            #[cfg(unix)]
-            tokio::select! {
-                () = sigint => (),
-                _ = sigterm => (),
-            }
-            #[cfg(windows)]
-            tokio::select! {
-                _ = sigint => (),
-            }
-        })
-        .await?;
+    let listener = tokio::net::TcpListener::bind(socket_addr).await.unwrap();
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(axum_ext::shutdown_signal())
+    .await?;
     Ok(())
 }
 
@@ -68,8 +49,10 @@ async fn get_healthz() -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-async fn get_capabilities() -> Json<ndc_models::CapabilitiesResponse> {
-    Json(custom_connector::schema::get_capabilities())
+async fn get_capabilities(
+    State(state): State<Arc<AppState>>,
+) -> Json<ndc_models::CapabilitiesResponse> {
+    Json(custom_connector::schema::get_capabilities(state.borrow()))
 }
 
 async fn get_schema() -> Json<ndc_models::SchemaResponse> {
@@ -100,4 +83,13 @@ async fn post_explain(
             details: serde_json::Value::Null,
         }),
     ))
+}
+
+async fn post_query_relational(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<RelationalQuery>,
+) -> Result<Json<RelationalQueryResponse>> {
+    custom_connector::query::relational::execute_relational_query(state.borrow(), &request)
+        .await
+        .map(|rows| Json(RelationalQueryResponse { rows }))
 }

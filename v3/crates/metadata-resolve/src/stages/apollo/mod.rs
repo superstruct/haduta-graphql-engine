@@ -12,7 +12,7 @@ use crate::types::subgraph::Qualified;
 /// Ideally, we could move more Apollo-based resolving into this discreet step, haven't
 /// investigated this too deeply yet.
 pub fn resolve(
-    apollo_federation_entity_enabled_types: &BTreeMap<
+    apollo_federation_entity_enabled_types: BTreeMap<
         Qualified<CustomTypeName>,
         Option<Qualified<open_dds::models::ModelName>>,
     >,
@@ -22,9 +22,7 @@ pub fn resolve(
     //   - Throw an error if no model with apolloFederation.entitySource:true is found for the object type.
     for (object_type, model_name_list) in apollo_federation_entity_enabled_types {
         if model_name_list.is_none() {
-            return Err(ApolloError::ApolloFederationEntitySourceNotDefined {
-                object_type: object_type.clone(),
-            });
+            return Err(ApolloError::ApolloFederationEntitySourceNotDefined { object_type });
         }
     }
     Ok(())
@@ -37,7 +35,9 @@ pub enum ApolloError {
         object_type: Qualified<CustomTypeName>,
     },
 
-    #[error("unknown field {field_name:} in apollo federation keys defined for the object type {object_type:}")]
+    #[error(
+        "unknown field {field_name:} in apollo federation keys defined for the object type {object_type:}"
+    )]
     UnknownFieldInApolloFederationKey {
         field_name: FieldName,
         object_type: Qualified<CustomTypeName>,
@@ -48,7 +48,9 @@ pub enum ApolloError {
     EmptyKeysInApolloFederationConfigForObject {
         object_type: Qualified<CustomTypeName>,
     },
-    #[error("'apolloFederation.keys' for type {object_type:} found, but no model found with 'apolloFederation.entitySource: true' for type {object_type:}")]
+    #[error(
+        "'apolloFederation.keys' for type {object_type:} found, but no model found with 'apolloFederation.entitySource: true' for type {object_type:}"
+    )]
     ApolloFederationEntitySourceNotDefined {
         object_type: Qualified<CustomTypeName>,
     },
@@ -57,9 +59,15 @@ pub enum ApolloError {
     )]
     ModelWithArgumentsAsApolloFederationEntitySource { model_name: Qualified<ModelName> },
 
-    #[error("Model {model_name:} is marked as an Apollo Federation entity source but there are no keys fields present in the related object type {type_name:}")]
+    #[error(
+        "Model {model_name:} is marked as an Apollo Federation entity source but there are no keys fields present in the related object type {type_name:}"
+    )]
     NoKeysFieldsPresentInEntitySource {
         type_name: Qualified<CustomTypeName>,
         model_name: ModelName,
+    },
+    #[error("multiple models are marked as entity source for the object type {type_name:}")]
+    MultipleEntitySourcesForType {
+        type_name: Qualified<CustomTypeName>,
     },
 }

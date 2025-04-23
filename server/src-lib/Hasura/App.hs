@@ -477,7 +477,7 @@ initialiseAppEnv env BasicConnectionInfo {..} serveOptions@ServeOptions {..} liv
           appEnvMetadataVersionRef = metaVersionRef,
           appEnvInstanceId = instanceId,
           appEnvEnableMaintenanceMode = soEnableMaintenanceMode,
-          appEnvLoggingSettings = LoggingSettings soEnabledLogTypes soEnableMetadataQueryLogging,
+          appEnvLoggingSettings = LoggingSettings soEnabledLogTypes soEnableMetadataQueryLogging soHttpLogQueryOnlyOnError,
           appEnvEventingMode = soEventingMode,
           appEnvEnableReadOnlyMode = soReadOnlyMode,
           appEnvServerMetrics = serverMetrics,
@@ -502,7 +502,8 @@ initialiseAppEnv env BasicConnectionInfo {..} serveOptions@ServeOptions {..} liv
           appEnvTriggersErrorLogLevelStatus = soTriggersErrorLogLevelStatus,
           appEnvAsyncActionsFetchBatchSize = soAsyncActionsFetchBatchSize,
           appEnvPersistedQueries = soPersistedQueries,
-          appEnvPersistedQueriesTtl = soPersistedQueriesTtl
+          appEnvPersistedQueriesTtl = soPersistedQueriesTtl,
+          appEnvPreserve401Errors = soPreserve401Errors
         }
     )
 
@@ -1356,6 +1357,7 @@ mkHGEServer setupHook appStateRef consoleType ekgStore = do
           (leActionEvents lockedEventsCtx)
           Nothing
           appEnvAsyncActionsFetchBatchSize
+          HideInternalErrors
           (acHeaderPrecedence <$> getAppContext appStateRef)
 
       -- start a background thread to handle async action live queries

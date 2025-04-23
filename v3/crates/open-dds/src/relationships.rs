@@ -5,10 +5,11 @@ use crate::{
     aggregates::AggregateExpressionName,
     arguments::ArgumentName,
     commands::CommandName,
-    identifier::Identifier,
+    identifier::{Identifier, SubgraphName, SubgraphNameInput},
     impl_JsonSchema_with_OpenDd_for,
     models::ModelName,
     permissions::ValueExpression,
+    spanned::Spanned,
     str_newtype,
     types::{CustomTypeName, Deprecated, FieldName},
 };
@@ -35,7 +36,7 @@ pub struct ModelRelationshipTarget {
     /// The name of the data model.
     pub name: ModelName,
     /// The subgraph of the target model. Defaults to the current subgraph.
-    subgraph: Option<String>,
+    subgraph: Option<SubgraphNameInput>,
     /// Type of the relationship - object or array.
     pub relationship_type: RelationshipType,
     /// How to aggregate over the relationship. Only valid for array relationships
@@ -46,8 +47,8 @@ pub struct ModelRelationshipTarget {
 impl_JsonSchema_with_OpenDd_for!(ModelRelationshipTarget);
 
 impl ModelRelationshipTarget {
-    pub fn subgraph(&self) -> Option<&str> {
-        self.subgraph.as_deref()
+    pub fn subgraph(&self) -> Option<SubgraphName> {
+        self.subgraph.as_ref().map(std::convert::Into::into)
     }
 }
 
@@ -72,12 +73,12 @@ pub struct CommandRelationshipTarget {
     /// The name of the command.
     pub name: CommandName,
     /// The subgraph of the target command. Defaults to the current subgraph.
-    pub subgraph: Option<String>,
+    pub subgraph: Option<SubgraphNameInput>,
 }
 
 impl CommandRelationshipTarget {
-    pub fn subgraph(&self) -> Option<&str> {
-        self.subgraph.as_deref()
+    pub fn subgraph(&self) -> Option<SubgraphName> {
+        self.subgraph.as_ref().map(std::convert::Into::into)
     }
 }
 
@@ -110,47 +111,45 @@ impl RelationshipTarget {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-#[schemars(title = "RelationshipSourceFieldAccess")]
+#[opendd(json_schema(title = "RelationshipSourceFieldAccess"))]
+/// A field access in a relationship mapping.
 pub struct FieldAccess {
-    pub field_name: FieldName,
+    pub field_name: Spanned<FieldName>,
     // #[serde(default)]
     // pub arguments: HashMap<ArgumentName, ValueExpression>,
 }
 
-#[derive(
-    Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, opendds_derive::OpenDd,
-)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
-#[schemars(title = "RelationshipMappingSource")]
+#[opendd(externally_tagged, json_schema(title = "RelationshipMappingSource"))]
 /// The source configuration for a relationship mapping.
 pub enum RelationshipMappingSource {
-    #[schemars(title = "SourceValue")]
+    #[opendd(json_schema(title = "SourceValue"))]
     Value(ValueExpression),
-    #[schemars(title = "SourceField")]
+    #[opendd(json_schema(title = "SourceField"))]
     FieldPath(Vec<FieldAccess>),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+/// An argument target for a relationship mapping.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-#[schemars(title = "ArgumentMappingTarget")]
+#[opendd(json_schema(title = "ArgumentMappingTarget"))]
 pub struct ArgumentMappingTarget {
     pub argument_name: ArgumentName,
 }
 
-#[derive(
-    Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, opendds_derive::OpenDd,
-)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
-#[schemars(title = "RelationshipMappingTarget")]
+#[opendd(externally_tagged, json_schema(title = "RelationshipMappingTarget"))]
 /// The target configuration for a relationship mapping.
 pub enum RelationshipMappingTarget {
-    #[schemars(title = "TargetArgument")]
+    #[opendd(json_schema(title = "TargetArgument"))]
     Argument(ArgumentMappingTarget),
-    #[schemars(title = "TargetModelField")]
+    #[opendd(json_schema(title = "TargetModelField"))]
     ModelField(Vec<FieldAccess>),
 }
 
@@ -220,7 +219,7 @@ impl Relationship {
                 "version": "v1",
                 "definition": {
                     "name": "Articles",
-                    "source": "author",
+                    "sourceType": "author",
                     "target": {
                         "model": {
                             "name": "Articles",

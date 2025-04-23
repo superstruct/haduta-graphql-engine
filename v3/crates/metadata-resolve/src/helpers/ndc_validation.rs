@@ -62,7 +62,9 @@ pub enum NDCValidationError {
         command_name: Qualified<CommandName>,
         function_name: FunctionName,
     },
-    #[error("column {column_name} is not defined in function/procedure {func_proc_name} in data connector {db_name}")]
+    #[error(
+        "column {column_name} is not defined in function/procedure {func_proc_name} in data connector {db_name}"
+    )]
     NoSuchColumnForCommand {
         db_name: Qualified<DataConnectorName>,
         command_name: Qualified<CommandName>,
@@ -70,7 +72,9 @@ pub enum NDCValidationError {
         func_proc_name: String,
         column_name: DataConnectorColumnName,
     },
-    #[error("column {column_name} has type {column_type} in collection {collection_name} in data connector {db_name}, not type {field_type}")]
+    #[error(
+        "column {column_name} has type {column_type} in collection {collection_name} in data connector {db_name}, not type {field_type}"
+    )]
     ColumnTypeDoesNotMatch {
         db_name: DataConnectorName,
         model_name: ModelName,
@@ -80,7 +84,9 @@ pub enum NDCValidationError {
         field_type: String,
         column_type: String,
     },
-    #[error("internal error: data connector does not define the scalar type {r#type}, used by field {field_name} in model {model_name}")]
+    #[error(
+        "internal error: data connector does not define the scalar type {type}, used by field {field_name} in model {model_name}"
+    )]
     TypeCapabilityNotDefined {
         model_name: ModelName,
         field_name: FieldName,
@@ -106,14 +112,18 @@ pub enum NDCValidationError {
         type_name: CustomTypeName,
         field_name: FieldName,
     },
-    #[error("Result type of function/procedure {function_or_procedure_name:} is {function_or_procedure_output_type:} but output type of command {command_name:} is {command_output_type:}")]
+    #[error(
+        "Result type of function/procedure {function_or_procedure_name:} is {function_or_procedure_output_type:} but output type of command {command_name:} is {command_output_type:}"
+    )]
     FuncProcAndCommandScalarOutputTypeMismatch {
         function_or_procedure_name: String,
         function_or_procedure_output_type: String,
         command_name: String,
         command_output_type: String,
     },
-    #[error("Custom result type of function {function_or_procedure_name:} does not match custom output type of command: {command_name:}")]
+    #[error(
+        "Custom result type of function {function_or_procedure_name:} does not match custom output type of command: {command_name:}"
+    )]
     FuncProcAndCommandCustomOutputTypeMismatch {
         function_or_procedure_name: String,
         command_name: String,
@@ -124,21 +134,18 @@ pub enum NDCValidationError {
     MutationCapabilityUnsupported,
 
     // for `DataConnectorLink.argumentPresets` not all type representations are supported.
-    #[error("Unsupported type representation {representation:} in scalar type {scalar_type:}, for argument preset name {argument_name:}. Only 'json' representation is supported.")]
+    #[error(
+        "Unsupported type representation {representation:} in scalar type {scalar_type:}, for argument preset name {argument_name:}. Only 'json' representation is supported."
+    )]
     UnsupportedTypeInDataConnectorLinkArgumentPreset {
         representation: String,
         scalar_type: DataConnectorScalarType,
-        argument_name: open_dds::arguments::ArgumentName,
+        argument_name: open_dds::types::DataConnectorArgumentName,
     },
 
-    #[error("Cannot use argument '{argument_name:}' in command '{command_name:}', as it already used as argument preset in data connector '{data_connector_name:}'.")]
-    CannotUseDataConnectorLinkArgumentPresetInCommand {
-        argument_name: open_dds::arguments::ArgumentName,
-        command_name: Qualified<CommandName>,
-        data_connector_name: Qualified<DataConnectorName>,
-    },
-
-    #[error("Argument '{argument_name:}' used in argument mapping for the field '{field_name:}' in object type '{object_type_name:}' is not defined in the data connector '{data_connector_name:}'.")]
+    #[error(
+        "Argument '{argument_name:}' used in argument mapping for the field '{field_name:}' in object type '{object_type_name:}' is not defined in the data connector '{data_connector_name:}'."
+    )]
     NoSuchArgumentInNDCArgumentMapping {
         argument_name: open_dds::arguments::ArgumentName,
         field_name: FieldName,
@@ -146,7 +153,9 @@ pub enum NDCValidationError {
         data_connector_name: Qualified<DataConnectorName>,
     },
 
-    #[error("Field {field_name:} not found in object type {object_type:} in data connector {data_connector_name:}.")]
+    #[error(
+        "Field {field_name:} not found in object type {object_type:} in data connector {data_connector_name:}."
+    )]
     NoSuchFieldInObjectType {
         data_connector_name: Qualified<DataConnectorName>,
         field_name: String,
@@ -326,26 +335,8 @@ pub fn validate_ndc_command(
         }
     };
 
-    let dc_link_argument_presets = db
-        .argument_presets
-        .iter()
-        .map(|preset| &preset.name)
-        .collect::<Vec<_>>();
-
     // Check if the arguments are correctly mapped
-    for (open_dd_argument_name, ndc_argument_name) in &command_source.argument_mappings {
-        // Arguments already used in DataConnectorLink.argumentPresets can't be
-        // used as command arguments
-        if dc_link_argument_presets.contains(&open_dd_argument_name) {
-            return Err(
-                NDCValidationError::CannotUseDataConnectorLinkArgumentPresetInCommand {
-                    argument_name: open_dd_argument_name.clone(),
-                    command_name: command_name.clone(),
-                    data_connector_name: db.name.clone(),
-                },
-            );
-        }
-
+    for ndc_argument_name in command_source.argument_mappings.values() {
         if !command_source_ndc_arguments.contains_key(ndc_argument_name.as_str()) {
             return Err(NDCValidationError::NoSuchArgumentForCommand {
                 db_name: db.name.clone(),
@@ -507,7 +498,7 @@ pub(crate) fn validate_ndc_argument_presets(
 // other than "json", we error out. Later if we added a "map" type then we would support both
 // "map" and "json".
 fn validate_argument_preset_type(
-    preset_argument_name: &open_dds::arguments::ArgumentName,
+    preset_argument_name: &open_dds::types::DataConnectorArgumentName,
     arguments: &BTreeMap<ndc_models::ArgumentName, ndc_models::ArgumentInfo>,
     schema: &data_connectors::DataConnectorSchema,
 ) -> Result<(), NDCValidationError> {
@@ -519,22 +510,17 @@ fn validate_argument_preset_type(
                 .get(type_name.as_str())
                 .ok_or_else(|| NDCValidationError::NoSuchType(type_name.as_str().to_owned()))?;
 
-            // if there is no representation default is assumed to be JSON
-            // (https://github.com/hasura/ndc-spec/blob/main/ndc-models/src/lib.rs#L130),
-            // so that's fine
-            if let Some(scalar_type_representation) = &scalar_type.representation {
-                if *scalar_type_representation != ndc_models::TypeRepresentation::JSON {
-                    return Err(
-                        NDCValidationError::UnsupportedTypeInDataConnectorLinkArgumentPreset {
-                            representation: serde_json::to_string(&scalar_type_representation)
-                                .map_err(|e| NDCValidationError::InternalSerializationError {
-                                    err: e,
-                                })?,
-                            scalar_type: DataConnectorScalarType::from(type_name.as_str()),
-                            argument_name: preset_argument_name.clone(),
-                        },
-                    );
-                }
+            if scalar_type.representation != ndc_models::TypeRepresentation::JSON {
+                return Err(
+                    NDCValidationError::UnsupportedTypeInDataConnectorLinkArgumentPreset {
+                        representation: serde_json::to_string(&scalar_type.representation)
+                            .map_err(|e| NDCValidationError::InternalSerializationError {
+                                err: e,
+                            })?,
+                        scalar_type: DataConnectorScalarType::from(type_name.as_str()),
+                        argument_name: preset_argument_name.clone(),
+                    },
+                );
             }
         }
     }

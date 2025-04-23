@@ -24,7 +24,27 @@
                       "type": "string"
                     },
                     "aggregate_functions": {},
-                    "comparison_operators": {}
+                    "comparison_operators": {},
+                    "extraction_functions": {}
+                  },
+                  "BigInt": {
+                    "representation": {
+                      "type": "biginteger"
+                    },
+                    "aggregate_functions": {
+                      "max": {
+                        "type": "max"
+                      },
+                      "min": {
+                        "type": "min"
+                      }
+                    },
+                    "comparison_operators": {
+                      "_eq": {
+                        "type": "equal"
+                      }
+                    },
+                    "extraction_functions": {}
                   },
                   "Bool": {
                     "representation": {
@@ -39,6 +59,32 @@
                           "name": "Bool"
                         }
                       }
+                    },
+                    "extraction_functions": {}
+                  },
+                  "Date": {
+                    "representation": {
+                      "type": "date"
+                    },
+                    "aggregate_functions": {},
+                    "comparison_operators": {
+                      "_eq": {
+                        "type": "equal"
+                      }
+                    },
+                    "extraction_functions": {
+                      "day": {
+                        "type": "day",
+                        "result_type": "Int"
+                      },
+                      "month": {
+                        "type": "month",
+                        "result_type": "Int"
+                      },
+                      "year": {
+                        "type": "year",
+                        "result_type": "Int"
+                      }
                     }
                   },
                   "HeaderMap": {
@@ -46,7 +92,8 @@
                       "type": "json"
                     },
                     "aggregate_functions": {},
-                    "comparison_operators": {}
+                    "comparison_operators": {},
+                    "extraction_functions": {}
                   },
                   "Int": {
                     "representation": {
@@ -54,29 +101,37 @@
                     },
                     "aggregate_functions": {
                       "max": {
-                        "result_type": {
-                          "type": "nullable",
-                          "underlying_type": {
-                            "type": "named",
-                            "name": "Int"
-                          }
-                        }
+                        "type": "max"
                       },
                       "min": {
-                        "result_type": {
-                          "type": "nullable",
-                          "underlying_type": {
-                            "type": "named",
-                            "name": "Int"
-                          }
-                        }
+                        "type": "min"
                       }
                     },
                     "comparison_operators": {
                       "_eq": {
                         "type": "equal"
                       }
-                    }
+                    },
+                    "extraction_functions": {}
+                  },
+                  "Int64": {
+                    "representation": {
+                      "type": "int64"
+                    },
+                    "aggregate_functions": {
+                      "max": {
+                        "type": "max"
+                      },
+                      "min": {
+                        "type": "min"
+                      }
+                    },
+                    "comparison_operators": {
+                      "_eq": {
+                        "type": "equal"
+                      }
+                    },
+                    "extraction_functions": {}
                   },
                   "String": {
                     "representation": {
@@ -84,27 +139,50 @@
                     },
                     "aggregate_functions": {
                       "max": {
-                        "result_type": {
-                          "type": "nullable",
-                          "underlying_type": {
-                            "type": "named",
-                            "name": "String"
-                          }
-                        }
+                        "type": "max"
                       },
                       "min": {
-                        "result_type": {
-                          "type": "nullable",
-                          "underlying_type": {
-                            "type": "named",
-                            "name": "String"
-                          }
-                        }
+                        "type": "min"
                       }
                     },
                     "comparison_operators": {
+                      "_contains": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      },
                       "_eq": {
                         "type": "equal"
+                      },
+                      "_icontains": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      },
+                      "ends_with": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      },
+                      "iends_with": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      },
+                      "istarts_with": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
                       },
                       "like": {
                         "type": "custom",
@@ -112,19 +190,75 @@
                           "type": "named",
                           "name": "String"
                         }
+                      },
+                      "starts_with": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
                       }
-                    }
+                    },
+                    "extraction_functions": {}
                   }
                 },
                 "object_types": {
                   "actor": {
                     "description": "An actor",
                     "fields": {
+                      "country_id": {
+                        "description": "The actor's country of origin",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        },
+                        "arguments": {
+                          "hash": {
+                            "description": "Calculate hash",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          }
+                        }
+                      },
                       "favourite_author_id": {
                         "description": "The actor's favourite author ID",
                         "type": {
                           "type": "named",
                           "name": "Int"
+                        },
+                        "arguments": {
+                          "hash": {
+                            "description": "Calculate hash",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          }
+                        }
+                      },
+                      "favourite_big_integer": {
+                        "description": "The actor's favourite big integer",
+                        "type": {
+                          "type": "named",
+                          "name": "BigInt"
+                        },
+                        "arguments": {
+                          "hash": {
+                            "description": "Calculate hash",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          }
+                        }
+                      },
+                      "favourite_int_64": {
+                        "description": "The actor's favourite int 64",
+                        "type": {
+                          "type": "named",
+                          "name": "Int64"
                         },
                         "arguments": {
                           "hash": {
@@ -205,7 +339,122 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "city": {
+                    "description": "A city",
+                    "fields": {
+                      "name": {
+                        "description": "The city's name",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "continent": {
+                    "description": "A continent",
+                    "fields": {
+                      "area_km2": {
+                        "description": "The continents's area size in square kilometers",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "biggest_country_id": {
+                        "description": "The primary key of the continent's biggest country",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "id": {
+                        "description": "The continent's primary key",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "name": {
+                        "description": "The continents's name",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "country": {
+                    "description": "A country",
+                    "fields": {
+                      "area_km2": {
+                        "description": "The country's area size in square kilometers",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "cities": {
+                        "description": "The cities in the country",
+                        "type": {
+                          "type": "array",
+                          "element_type": {
+                            "type": "named",
+                            "name": "city"
+                          }
+                        }
+                      },
+                      "continent_id": {
+                        "description": "The country's continent's primary key",
+                        "type": {
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "named",
+                            "name": "Int"
+                          }
+                        }
+                      },
+                      "id": {
+                        "description": "The country's primary key",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "name": {
+                        "description": "The country's name",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "evaluated_institution": {
+                    "description": "An institution and its evaluation result",
+                    "fields": {
+                      "evaluation_result": {
+                        "description": "The institution's evaluation result",
+                        "type": {
+                          "type": "named",
+                          "name": "Bool"
+                        }
+                      },
+                      "institution": {
+                        "description": "The institution",
+                        "type": {
+                          "type": "named",
+                          "name": "institution"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
                   },
                   "genre": {
                     "description": "A movie genre",
@@ -273,7 +522,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "institution": {
                     "description": "An institution",
@@ -307,8 +557,11 @@
                       "location": {
                         "description": "The institution's location",
                         "type": {
-                          "type": "named",
-                          "name": "location"
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "named",
+                            "name": "location"
+                          }
                         }
                       },
                       "name": {
@@ -358,7 +611,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "location": {
                     "description": "A location",
@@ -446,8 +700,113 @@
                             }
                           }
                         }
+                      },
+                      "country_id": {
+                        "description": "The location's country ID",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "location_pascalcase": {
+                    "description": "A location, but with pascal-case properties",
+                    "fields": {
+                      "Campuses": {
+                        "description": "The location's campuses",
+                        "type": {
+                          "type": "array",
+                          "element_type": {
+                            "type": "named",
+                            "name": "String"
+                          }
+                        }
+                      },
+                      "City": {
+                        "description": "The location's city",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        },
+                        "arguments": {
+                          "change_case": {
+                            "description": "Change the case of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          },
+                          "hash": {
+                            "description": "Hash a string",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          },
+                          "limit": {
+                            "description": "Limit the length of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "Int"
+                            }
+                          },
+                          "offset": {
+                            "description": "Offset the length of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "Int"
+                            }
+                          }
+                        }
+                      },
+                      "Country": {
+                        "description": "The location's country",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        },
+                        "arguments": {
+                          "change_case": {
+                            "description": "Change the case of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          },
+                          "hash": {
+                            "description": "Hash a string",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          },
+                          "limit": {
+                            "description": "Limit the length of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "Int"
+                            }
+                          },
+                          "offset": {
+                            "description": "Offset the length of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "Int"
+                            }
+                          }
+                        }
+                      },
+                      "CountryId": {
+                        "description": "The location's country ID",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
                   },
                   "login_response": {
                     "description": "Response to a login action",
@@ -466,7 +825,8 @@
                           "name": "Bool"
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "movie": {
                     "description": "A movie",
@@ -513,6 +873,13 @@
                           }
                         }
                       },
+                      "release_date": {
+                        "description": "The movie's release date",
+                        "type": {
+                          "type": "named",
+                          "name": "Date"
+                        }
+                      },
                       "title": {
                         "description": "The movie's title",
                         "type": {
@@ -550,7 +917,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "name_query": {
                     "description": "parameters for querying by name",
@@ -635,7 +1003,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "session_info": {
                     "description": "Session details",
@@ -654,7 +1023,8 @@
                           "name": "String"
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "session_response": {
                     "description": "Response of session details",
@@ -673,11 +1043,26 @@
                           "name": "session_info"
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "staff_member": {
                     "description": "A staff member",
                     "fields": {
+                      "favourite_artist_id": {
+                        "description": "The artist_id of the staff member's favourite artist",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "favourite_movie_id": {
+                        "description": "The movie_id of the staff member's favourite movie",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
                       "first_name": {
                         "description": "The staff member's first name",
                         "type": {
@@ -762,7 +1147,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   }
                 },
                 "collections": [
@@ -775,8 +1161,7 @@
                       "ActorByID": {
                         "unique_columns": ["id"]
                       }
-                    },
-                    "foreign_keys": {}
+                    }
                   },
                   {
                     "name": "movies",
@@ -787,8 +1172,29 @@
                       "MovieByID": {
                         "unique_columns": ["id"]
                       }
-                    },
-                    "foreign_keys": {}
+                    }
+                  },
+                  {
+                    "name": "countries",
+                    "description": "A collection of countries",
+                    "arguments": {},
+                    "type": "country",
+                    "uniqueness_constraints": {
+                      "CountryByID": {
+                        "unique_columns": ["id"]
+                      }
+                    }
+                  },
+                  {
+                    "name": "continents",
+                    "description": "A collection of continents",
+                    "arguments": {},
+                    "type": "continent",
+                    "uniqueness_constraints": {
+                      "ContinentByID": {
+                        "unique_columns": ["id"]
+                      }
+                    }
                   },
                   {
                     "name": "institutions",
@@ -799,13 +1205,21 @@
                       "InstitutionByID": {
                         "unique_columns": ["id"]
                       }
-                    },
-                    "foreign_keys": {}
+                    }
                   },
                   {
                     "name": "actors_by_movie",
                     "description": "Actors parameterized by movie",
                     "arguments": {
+                      "ignore_me": {
+                        "type": {
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "named",
+                            "name": "Int"
+                          }
+                        }
+                      },
                       "movie_id": {
                         "type": {
                           "type": "named",
@@ -814,13 +1228,19 @@
                       }
                     },
                     "type": "actor",
-                    "uniqueness_constraints": {},
-                    "foreign_keys": {}
+                    "uniqueness_constraints": {}
                   },
                   {
                     "name": "movies_by_actor_name",
                     "description": "Movies filtered by actor name search parameters",
                     "arguments": {
+                      "_headers": {
+                        "description": "headers",
+                        "type": {
+                          "type": "named",
+                          "name": "HeaderMap"
+                        }
+                      },
                       "actor_name": {
                         "description": "the actor name components to search by",
                         "type": {
@@ -830,11 +1250,67 @@
                       }
                     },
                     "type": "movie",
-                    "uniqueness_constraints": {},
-                    "foreign_keys": {}
+                    "uniqueness_constraints": {}
                   }
                 ],
                 "functions": [
+                  {
+                    "name": "eval_institutions",
+                    "description": "Evaluates submitted institution objects against the provided boolean expression",
+                    "arguments": {
+                      "check": {
+                        "description": "The boolean expression to evaluate the institutions against",
+                        "type": {
+                          "type": "predicate",
+                          "object_type_name": "institution"
+                        }
+                      },
+                      "institutions": {
+                        "description": "The institutions to evaluate",
+                        "type": {
+                          "type": "array",
+                          "element_type": {
+                            "type": "named",
+                            "name": "institution"
+                          }
+                        }
+                      }
+                    },
+                    "result_type": {
+                      "type": "array",
+                      "element_type": {
+                        "type": "named",
+                        "name": "evaluated_institution"
+                      }
+                    }
+                  },
+                  {
+                    "name": "eval_location",
+                    "description": "Evaluates a submitted location object against the provided boolean expression",
+                    "arguments": {
+                      "check": {
+                        "description": "The boolean expression to evaluate the location against",
+                        "type": {
+                          "type": "predicate",
+                          "object_type_name": "location_pascalcase"
+                        }
+                      },
+                      "location": {
+                        "description": "The location to evaluate",
+                        "type": {
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "named",
+                            "name": "location_pascalcase"
+                          }
+                        }
+                      }
+                    },
+                    "result_type": {
+                      "type": "named",
+                      "name": "Bool"
+                    }
+                  },
                   {
                     "name": "latest_actor_id",
                     "description": "Get the ID of the most recent actor",
@@ -1107,6 +1583,16 @@
                           "type": "named",
                           "name": "actor"
                         }
+                      },
+                      "pre_check": {
+                        "description": "Validate if the actor can be upserted",
+                        "type": {
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "predicate",
+                            "object_type_name": "actor"
+                          }
+                        }
                       }
                     },
                     "result_type": {
@@ -1258,9 +1744,7 @@
                 "capabilities": {
                   "query": {
                     "aggregates": {
-                      "filter_by": {
-                        "count_scalar_type": "Int"
-                      }
+                      "count_scalar_type": "Int"
                     }
                   }
                 }
@@ -1269,7 +1753,13 @@
                 "version": "0.2.0",
                 "capabilities": {
                   "query": {
-                    "aggregates": {},
+                    "aggregates": {
+                      "group_by": {
+                        "filter": {},
+                        "order": {},
+                        "paginate": {}
+                      }
+                    },
                     "variables": {},
                     "nested_fields": {
                       "filter_by": {},
@@ -1277,13 +1767,651 @@
                       "aggregates": {}
                     },
                     "exists": {
-                      "unrelated": {}
+                      "unrelated": {},
+                      "nested_collections": {},
+                      "nested_scalar_collections": {}
                     }
                   },
                   "mutation": {},
                   "relationships": {
                     "relation_comparisons": {},
-                    "order_by_aggregate": {}
+                    "order_by_aggregate": {},
+                    "nested": {
+                      "array": {},
+                      "filtering": {},
+                      "ordering": {}
+                    }
+                  },
+                  "relational_query": {
+                    "project": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      }
+                    },
+                    "filter": {
+                      "conditional": {
+                        "case": {},
+                        "nullif": {}
+                      },
+                      "comparison": {
+                        "between": {},
+                        "contains": {},
+                        "greater_than_eq": {},
+                        "greater_than": {},
+                        "ilike": {},
+                        "in_list": {},
+                        "is_false": {},
+                        "is_nan": {},
+                        "is_null": {},
+                        "is_true": {},
+                        "is_zero": {},
+                        "less_than_eq": {},
+                        "less_than": {},
+                        "like": {}
+                      },
+                      "scalar": {
+                        "abs": {},
+                        "and": {},
+                        "btrim": {},
+                        "ceil": {},
+                        "character_length": {},
+                        "coalesce": {},
+                        "concat": {},
+                        "cos": {},
+                        "current_date": {},
+                        "current_time": {},
+                        "current_timestamp": {},
+                        "date_part": {
+                          "year": {},
+                          "quarter": {},
+                          "month": {},
+                          "week": {},
+                          "day_of_week": {},
+                          "day_of_year": {},
+                          "day": {},
+                          "hour": {},
+                          "minute": {},
+                          "second": {},
+                          "microsecond": {},
+                          "millisecond": {},
+                          "nanosecond": {}
+                        },
+                        "date_trunc": {},
+                        "divide": {},
+                        "exp": {},
+                        "floor": {},
+                        "greatest": {},
+                        "least": {},
+                        "left": {},
+                        "ln": {},
+                        "log": {},
+                        "log10": {},
+                        "log2": {},
+                        "lpad": {},
+                        "ltrim": {},
+                        "minus": {},
+                        "modulo": {},
+                        "multiply": {},
+                        "negate": {},
+                        "not": {},
+                        "nvl": {},
+                        "or": {},
+                        "plus": {},
+                        "power": {},
+                        "random": {},
+                        "replace": {},
+                        "reverse": {},
+                        "right": {},
+                        "round": {},
+                        "rpad": {},
+                        "rtrim": {},
+                        "sqrt": {},
+                        "str_pos": {},
+                        "substr_index": {},
+                        "substr": {},
+                        "tan": {},
+                        "to_date": {},
+                        "to_lower": {},
+                        "to_timestamp": {},
+                        "to_upper": {},
+                        "trunc": {}
+                      },
+                      "aggregate": {
+                        "avg": {},
+                        "count": {
+                          "distinct": {}
+                        },
+                        "max": {},
+                        "min": {},
+                        "sum": {}
+                      },
+                      "window": {
+                        "row_number": {},
+                        "ntile": {}
+                      }
+                    },
+                    "sort": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      }
+                    },
+                    "join": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      },
+                      "join_types": {
+                        "left": {},
+                        "right": {},
+                        "inner": {},
+                        "full": {}
+                      }
+                    },
+                    "aggregate": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      },
+                      "group_by": {}
+                    },
+                    "window": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -1315,7 +2443,27 @@
                       "type": "string"
                     },
                     "aggregate_functions": {},
-                    "comparison_operators": {}
+                    "comparison_operators": {},
+                    "extraction_functions": {}
+                  },
+                  "BigInt": {
+                    "representation": {
+                      "type": "biginteger"
+                    },
+                    "aggregate_functions": {
+                      "max": {
+                        "type": "max"
+                      },
+                      "min": {
+                        "type": "min"
+                      }
+                    },
+                    "comparison_operators": {
+                      "_eq": {
+                        "type": "equal"
+                      }
+                    },
+                    "extraction_functions": {}
                   },
                   "Bool": {
                     "representation": {
@@ -1330,6 +2478,32 @@
                           "name": "Bool"
                         }
                       }
+                    },
+                    "extraction_functions": {}
+                  },
+                  "Date": {
+                    "representation": {
+                      "type": "date"
+                    },
+                    "aggregate_functions": {},
+                    "comparison_operators": {
+                      "_eq": {
+                        "type": "equal"
+                      }
+                    },
+                    "extraction_functions": {
+                      "day": {
+                        "type": "day",
+                        "result_type": "Int"
+                      },
+                      "month": {
+                        "type": "month",
+                        "result_type": "Int"
+                      },
+                      "year": {
+                        "type": "year",
+                        "result_type": "Int"
+                      }
                     }
                   },
                   "HeaderMap": {
@@ -1337,7 +2511,8 @@
                       "type": "json"
                     },
                     "aggregate_functions": {},
-                    "comparison_operators": {}
+                    "comparison_operators": {},
+                    "extraction_functions": {}
                   },
                   "Int": {
                     "representation": {
@@ -1345,29 +2520,37 @@
                     },
                     "aggregate_functions": {
                       "max": {
-                        "result_type": {
-                          "type": "nullable",
-                          "underlying_type": {
-                            "type": "named",
-                            "name": "Int"
-                          }
-                        }
+                        "type": "max"
                       },
                       "min": {
-                        "result_type": {
-                          "type": "nullable",
-                          "underlying_type": {
-                            "type": "named",
-                            "name": "Int"
-                          }
-                        }
+                        "type": "min"
                       }
                     },
                     "comparison_operators": {
                       "_eq": {
                         "type": "equal"
                       }
-                    }
+                    },
+                    "extraction_functions": {}
+                  },
+                  "Int64": {
+                    "representation": {
+                      "type": "int64"
+                    },
+                    "aggregate_functions": {
+                      "max": {
+                        "type": "max"
+                      },
+                      "min": {
+                        "type": "min"
+                      }
+                    },
+                    "comparison_operators": {
+                      "_eq": {
+                        "type": "equal"
+                      }
+                    },
+                    "extraction_functions": {}
                   },
                   "String": {
                     "representation": {
@@ -1375,27 +2558,50 @@
                     },
                     "aggregate_functions": {
                       "max": {
-                        "result_type": {
-                          "type": "nullable",
-                          "underlying_type": {
-                            "type": "named",
-                            "name": "String"
-                          }
-                        }
+                        "type": "max"
                       },
                       "min": {
-                        "result_type": {
-                          "type": "nullable",
-                          "underlying_type": {
-                            "type": "named",
-                            "name": "String"
-                          }
-                        }
+                        "type": "min"
                       }
                     },
                     "comparison_operators": {
+                      "_contains": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      },
                       "_eq": {
                         "type": "equal"
+                      },
+                      "_icontains": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      },
+                      "ends_with": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      },
+                      "iends_with": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      },
+                      "istarts_with": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
                       },
                       "like": {
                         "type": "custom",
@@ -1403,19 +2609,75 @@
                           "type": "named",
                           "name": "String"
                         }
+                      },
+                      "starts_with": {
+                        "type": "custom",
+                        "argument_type": {
+                          "type": "named",
+                          "name": "String"
+                        }
                       }
-                    }
+                    },
+                    "extraction_functions": {}
                   }
                 },
                 "object_types": {
                   "actor": {
                     "description": "An actor",
                     "fields": {
+                      "country_id": {
+                        "description": "The actor's country of origin",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        },
+                        "arguments": {
+                          "hash": {
+                            "description": "Calculate hash",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          }
+                        }
+                      },
                       "favourite_author_id": {
                         "description": "The actor's favourite author ID",
                         "type": {
                           "type": "named",
                           "name": "Int"
+                        },
+                        "arguments": {
+                          "hash": {
+                            "description": "Calculate hash",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          }
+                        }
+                      },
+                      "favourite_big_integer": {
+                        "description": "The actor's favourite big integer",
+                        "type": {
+                          "type": "named",
+                          "name": "BigInt"
+                        },
+                        "arguments": {
+                          "hash": {
+                            "description": "Calculate hash",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          }
+                        }
+                      },
+                      "favourite_int_64": {
+                        "description": "The actor's favourite int 64",
+                        "type": {
+                          "type": "named",
+                          "name": "Int64"
                         },
                         "arguments": {
                           "hash": {
@@ -1496,7 +2758,122 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "city": {
+                    "description": "A city",
+                    "fields": {
+                      "name": {
+                        "description": "The city's name",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "continent": {
+                    "description": "A continent",
+                    "fields": {
+                      "area_km2": {
+                        "description": "The continents's area size in square kilometers",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "biggest_country_id": {
+                        "description": "The primary key of the continent's biggest country",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "id": {
+                        "description": "The continent's primary key",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "name": {
+                        "description": "The continents's name",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "country": {
+                    "description": "A country",
+                    "fields": {
+                      "area_km2": {
+                        "description": "The country's area size in square kilometers",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "cities": {
+                        "description": "The cities in the country",
+                        "type": {
+                          "type": "array",
+                          "element_type": {
+                            "type": "named",
+                            "name": "city"
+                          }
+                        }
+                      },
+                      "continent_id": {
+                        "description": "The country's continent's primary key",
+                        "type": {
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "named",
+                            "name": "Int"
+                          }
+                        }
+                      },
+                      "id": {
+                        "description": "The country's primary key",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "name": {
+                        "description": "The country's name",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "evaluated_institution": {
+                    "description": "An institution and its evaluation result",
+                    "fields": {
+                      "evaluation_result": {
+                        "description": "The institution's evaluation result",
+                        "type": {
+                          "type": "named",
+                          "name": "Bool"
+                        }
+                      },
+                      "institution": {
+                        "description": "The institution",
+                        "type": {
+                          "type": "named",
+                          "name": "institution"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
                   },
                   "genre": {
                     "description": "A movie genre",
@@ -1564,7 +2941,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "institution": {
                     "description": "An institution",
@@ -1598,8 +2976,11 @@
                       "location": {
                         "description": "The institution's location",
                         "type": {
-                          "type": "named",
-                          "name": "location"
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "named",
+                            "name": "location"
+                          }
                         }
                       },
                       "name": {
@@ -1649,7 +3030,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "location": {
                     "description": "A location",
@@ -1737,8 +3119,113 @@
                             }
                           }
                         }
+                      },
+                      "country_id": {
+                        "description": "The location's country ID",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
+                  },
+                  "location_pascalcase": {
+                    "description": "A location, but with pascal-case properties",
+                    "fields": {
+                      "Campuses": {
+                        "description": "The location's campuses",
+                        "type": {
+                          "type": "array",
+                          "element_type": {
+                            "type": "named",
+                            "name": "String"
+                          }
+                        }
+                      },
+                      "City": {
+                        "description": "The location's city",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        },
+                        "arguments": {
+                          "change_case": {
+                            "description": "Change the case of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          },
+                          "hash": {
+                            "description": "Hash a string",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          },
+                          "limit": {
+                            "description": "Limit the length of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "Int"
+                            }
+                          },
+                          "offset": {
+                            "description": "Offset the length of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "Int"
+                            }
+                          }
+                        }
+                      },
+                      "Country": {
+                        "description": "The location's country",
+                        "type": {
+                          "type": "named",
+                          "name": "String"
+                        },
+                        "arguments": {
+                          "change_case": {
+                            "description": "Change the case of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          },
+                          "hash": {
+                            "description": "Hash a string",
+                            "type": {
+                              "type": "named",
+                              "name": "String"
+                            }
+                          },
+                          "limit": {
+                            "description": "Limit the length of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "Int"
+                            }
+                          },
+                          "offset": {
+                            "description": "Offset the length of a string",
+                            "type": {
+                              "type": "named",
+                              "name": "Int"
+                            }
+                          }
+                        }
+                      },
+                      "CountryId": {
+                        "description": "The location's country ID",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      }
+                    },
+                    "foreign_keys": {}
                   },
                   "login_response": {
                     "description": "Response to a login action",
@@ -1757,7 +3244,8 @@
                           "name": "Bool"
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "movie": {
                     "description": "A movie",
@@ -1804,6 +3292,13 @@
                           }
                         }
                       },
+                      "release_date": {
+                        "description": "The movie's release date",
+                        "type": {
+                          "type": "named",
+                          "name": "Date"
+                        }
+                      },
                       "title": {
                         "description": "The movie's title",
                         "type": {
@@ -1841,7 +3336,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "name_query": {
                     "description": "parameters for querying by name",
@@ -1926,7 +3422,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "session_info": {
                     "description": "Session details",
@@ -1945,7 +3442,8 @@
                           "name": "String"
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "session_response": {
                     "description": "Response of session details",
@@ -1964,11 +3462,26 @@
                           "name": "session_info"
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   },
                   "staff_member": {
                     "description": "A staff member",
                     "fields": {
+                      "favourite_artist_id": {
+                        "description": "The artist_id of the staff member's favourite artist",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
+                      "favourite_movie_id": {
+                        "description": "The movie_id of the staff member's favourite movie",
+                        "type": {
+                          "type": "named",
+                          "name": "Int"
+                        }
+                      },
                       "first_name": {
                         "description": "The staff member's first name",
                         "type": {
@@ -2053,7 +3566,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "foreign_keys": {}
                   }
                 },
                 "collections": [
@@ -2066,8 +3580,7 @@
                       "ActorByID": {
                         "unique_columns": ["id"]
                       }
-                    },
-                    "foreign_keys": {}
+                    }
                   },
                   {
                     "name": "movies",
@@ -2078,8 +3591,29 @@
                       "MovieByID": {
                         "unique_columns": ["id"]
                       }
-                    },
-                    "foreign_keys": {}
+                    }
+                  },
+                  {
+                    "name": "countries",
+                    "description": "A collection of countries",
+                    "arguments": {},
+                    "type": "country",
+                    "uniqueness_constraints": {
+                      "CountryByID": {
+                        "unique_columns": ["id"]
+                      }
+                    }
+                  },
+                  {
+                    "name": "continents",
+                    "description": "A collection of continents",
+                    "arguments": {},
+                    "type": "continent",
+                    "uniqueness_constraints": {
+                      "ContinentByID": {
+                        "unique_columns": ["id"]
+                      }
+                    }
                   },
                   {
                     "name": "institutions",
@@ -2090,13 +3624,21 @@
                       "InstitutionByID": {
                         "unique_columns": ["id"]
                       }
-                    },
-                    "foreign_keys": {}
+                    }
                   },
                   {
                     "name": "actors_by_movie",
                     "description": "Actors parameterized by movie",
                     "arguments": {
+                      "ignore_me": {
+                        "type": {
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "named",
+                            "name": "Int"
+                          }
+                        }
+                      },
                       "movie_id": {
                         "type": {
                           "type": "named",
@@ -2105,13 +3647,19 @@
                       }
                     },
                     "type": "actor",
-                    "uniqueness_constraints": {},
-                    "foreign_keys": {}
+                    "uniqueness_constraints": {}
                   },
                   {
                     "name": "movies_by_actor_name",
                     "description": "Movies filtered by actor name search parameters",
                     "arguments": {
+                      "_headers": {
+                        "description": "headers",
+                        "type": {
+                          "type": "named",
+                          "name": "HeaderMap"
+                        }
+                      },
                       "actor_name": {
                         "description": "the actor name components to search by",
                         "type": {
@@ -2121,11 +3669,67 @@
                       }
                     },
                     "type": "movie",
-                    "uniqueness_constraints": {},
-                    "foreign_keys": {}
+                    "uniqueness_constraints": {}
                   }
                 ],
                 "functions": [
+                  {
+                    "name": "eval_institutions",
+                    "description": "Evaluates submitted institution objects against the provided boolean expression",
+                    "arguments": {
+                      "check": {
+                        "description": "The boolean expression to evaluate the institutions against",
+                        "type": {
+                          "type": "predicate",
+                          "object_type_name": "institution"
+                        }
+                      },
+                      "institutions": {
+                        "description": "The institutions to evaluate",
+                        "type": {
+                          "type": "array",
+                          "element_type": {
+                            "type": "named",
+                            "name": "institution"
+                          }
+                        }
+                      }
+                    },
+                    "result_type": {
+                      "type": "array",
+                      "element_type": {
+                        "type": "named",
+                        "name": "evaluated_institution"
+                      }
+                    }
+                  },
+                  {
+                    "name": "eval_location",
+                    "description": "Evaluates a submitted location object against the provided boolean expression",
+                    "arguments": {
+                      "check": {
+                        "description": "The boolean expression to evaluate the location against",
+                        "type": {
+                          "type": "predicate",
+                          "object_type_name": "location_pascalcase"
+                        }
+                      },
+                      "location": {
+                        "description": "The location to evaluate",
+                        "type": {
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "named",
+                            "name": "location_pascalcase"
+                          }
+                        }
+                      }
+                    },
+                    "result_type": {
+                      "type": "named",
+                      "name": "Bool"
+                    }
+                  },
                   {
                     "name": "latest_actor_id",
                     "description": "Get the ID of the most recent actor",
@@ -2398,6 +4002,16 @@
                           "type": "named",
                           "name": "actor"
                         }
+                      },
+                      "pre_check": {
+                        "description": "Validate if the actor can be upserted",
+                        "type": {
+                          "type": "nullable",
+                          "underlying_type": {
+                            "type": "predicate",
+                            "object_type_name": "actor"
+                          }
+                        }
                       }
                     },
                     "result_type": {
@@ -2549,9 +4163,7 @@
                 "capabilities": {
                   "query": {
                     "aggregates": {
-                      "filter_by": {
-                        "count_scalar_type": "Int"
-                      }
+                      "count_scalar_type": "Int"
                     }
                   }
                 }
@@ -2560,7 +4172,13 @@
                 "version": "0.2.0",
                 "capabilities": {
                   "query": {
-                    "aggregates": {},
+                    "aggregates": {
+                      "group_by": {
+                        "filter": {},
+                        "order": {},
+                        "paginate": {}
+                      }
+                    },
                     "variables": {},
                     "nested_fields": {
                       "filter_by": {},
@@ -2568,13 +4186,651 @@
                       "aggregates": {}
                     },
                     "exists": {
-                      "unrelated": {}
+                      "unrelated": {},
+                      "nested_collections": {},
+                      "nested_scalar_collections": {}
                     }
                   },
                   "mutation": {},
                   "relationships": {
                     "relation_comparisons": {},
-                    "order_by_aggregate": {}
+                    "order_by_aggregate": {},
+                    "nested": {
+                      "array": {},
+                      "filtering": {},
+                      "ordering": {}
+                    }
+                  },
+                  "relational_query": {
+                    "project": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      }
+                    },
+                    "filter": {
+                      "conditional": {
+                        "case": {},
+                        "nullif": {}
+                      },
+                      "comparison": {
+                        "between": {},
+                        "contains": {},
+                        "greater_than_eq": {},
+                        "greater_than": {},
+                        "ilike": {},
+                        "in_list": {},
+                        "is_false": {},
+                        "is_nan": {},
+                        "is_null": {},
+                        "is_true": {},
+                        "is_zero": {},
+                        "less_than_eq": {},
+                        "less_than": {},
+                        "like": {}
+                      },
+                      "scalar": {
+                        "abs": {},
+                        "and": {},
+                        "btrim": {},
+                        "ceil": {},
+                        "character_length": {},
+                        "coalesce": {},
+                        "concat": {},
+                        "cos": {},
+                        "current_date": {},
+                        "current_time": {},
+                        "current_timestamp": {},
+                        "date_part": {
+                          "year": {},
+                          "quarter": {},
+                          "month": {},
+                          "week": {},
+                          "day_of_week": {},
+                          "day_of_year": {},
+                          "day": {},
+                          "hour": {},
+                          "minute": {},
+                          "second": {},
+                          "microsecond": {},
+                          "millisecond": {},
+                          "nanosecond": {}
+                        },
+                        "date_trunc": {},
+                        "divide": {},
+                        "exp": {},
+                        "floor": {},
+                        "greatest": {},
+                        "least": {},
+                        "left": {},
+                        "ln": {},
+                        "log": {},
+                        "log10": {},
+                        "log2": {},
+                        "lpad": {},
+                        "ltrim": {},
+                        "minus": {},
+                        "modulo": {},
+                        "multiply": {},
+                        "negate": {},
+                        "not": {},
+                        "nvl": {},
+                        "or": {},
+                        "plus": {},
+                        "power": {},
+                        "random": {},
+                        "replace": {},
+                        "reverse": {},
+                        "right": {},
+                        "round": {},
+                        "rpad": {},
+                        "rtrim": {},
+                        "sqrt": {},
+                        "str_pos": {},
+                        "substr_index": {},
+                        "substr": {},
+                        "tan": {},
+                        "to_date": {},
+                        "to_lower": {},
+                        "to_timestamp": {},
+                        "to_upper": {},
+                        "trunc": {}
+                      },
+                      "aggregate": {
+                        "avg": {},
+                        "count": {
+                          "distinct": {}
+                        },
+                        "max": {},
+                        "min": {},
+                        "sum": {}
+                      },
+                      "window": {
+                        "row_number": {},
+                        "ntile": {}
+                      }
+                    },
+                    "sort": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      }
+                    },
+                    "join": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      },
+                      "join_types": {
+                        "left": {},
+                        "right": {},
+                        "inner": {},
+                        "full": {}
+                      }
+                    },
+                    "aggregate": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      },
+                      "group_by": {}
+                    },
+                    "window": {
+                      "expression": {
+                        "conditional": {
+                          "case": {},
+                          "nullif": {}
+                        },
+                        "comparison": {
+                          "between": {},
+                          "contains": {},
+                          "greater_than_eq": {},
+                          "greater_than": {},
+                          "ilike": {},
+                          "in_list": {},
+                          "is_false": {},
+                          "is_nan": {},
+                          "is_null": {},
+                          "is_true": {},
+                          "is_zero": {},
+                          "less_than_eq": {},
+                          "less_than": {},
+                          "like": {}
+                        },
+                        "scalar": {
+                          "abs": {},
+                          "and": {},
+                          "btrim": {},
+                          "ceil": {},
+                          "character_length": {},
+                          "coalesce": {},
+                          "concat": {},
+                          "cos": {},
+                          "current_date": {},
+                          "current_time": {},
+                          "current_timestamp": {},
+                          "date_part": {
+                            "year": {},
+                            "quarter": {},
+                            "month": {},
+                            "week": {},
+                            "day_of_week": {},
+                            "day_of_year": {},
+                            "day": {},
+                            "hour": {},
+                            "minute": {},
+                            "second": {},
+                            "microsecond": {},
+                            "millisecond": {},
+                            "nanosecond": {}
+                          },
+                          "date_trunc": {},
+                          "divide": {},
+                          "exp": {},
+                          "floor": {},
+                          "greatest": {},
+                          "least": {},
+                          "left": {},
+                          "ln": {},
+                          "log": {},
+                          "log10": {},
+                          "log2": {},
+                          "lpad": {},
+                          "ltrim": {},
+                          "minus": {},
+                          "modulo": {},
+                          "multiply": {},
+                          "negate": {},
+                          "not": {},
+                          "nvl": {},
+                          "or": {},
+                          "plus": {},
+                          "power": {},
+                          "random": {},
+                          "replace": {},
+                          "reverse": {},
+                          "right": {},
+                          "round": {},
+                          "rpad": {},
+                          "rtrim": {},
+                          "sqrt": {},
+                          "str_pos": {},
+                          "substr_index": {},
+                          "substr": {},
+                          "tan": {},
+                          "to_date": {},
+                          "to_lower": {},
+                          "to_timestamp": {},
+                          "to_upper": {},
+                          "trunc": {}
+                        },
+                        "aggregate": {
+                          "avg": {},
+                          "count": {
+                            "distinct": {}
+                          },
+                          "max": {},
+                          "min": {},
+                          "sum": {}
+                        },
+                        "window": {
+                          "row_number": {},
+                          "ntile": {}
+                        }
+                      }
+                    }
                   }
                 }
               }

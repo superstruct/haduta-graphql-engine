@@ -1,36 +1,38 @@
-use open_dds::aggregates::AggregateExpressionName;
-use open_dds::data_connector::DataConnectorName;
-use open_dds::models::{ModelGraphQlDefinition, ModelName};
-use open_dds::relationships::{ModelRelationshipTarget, RelationshipTarget};
+use std::sync::Arc;
 
+use super::error::ModelGraphqlError;
 use super::types::{
-    LimitFieldGraphqlConfig, ModelGraphQlApi, ModelGraphqlApiArgumentsConfig,
+    LimitFieldGraphqlConfig, ModelGraphQlApi, ModelGraphqlApiArgumentsConfig, ModelGraphqlIssue,
     ModelOrderByExpression, OffsetFieldGraphqlConfig, OrderByExpressionInfo,
     SelectAggregateGraphQlDefinition, SelectManyGraphQlDefinition, SelectUniqueGraphQlDefinition,
-    UniqueIdentifierField,
+    SubscriptionGraphQlDefinition, UniqueIdentifierField,
 };
-use crate::helpers::types::{mk_name, store_new_graphql_type};
-use crate::stages::{data_connector_scalar_types, graphql_config, models, object_types};
-use crate::types::error::Error;
+use crate::Warning;
+use crate::helpers::types::{TrackGraphQLRootFields, mk_name};
+use crate::stages::order_by_expressions::{OrderByExpressionIdentifier, OrderByExpressions};
+use crate::stages::{graphql_config, models, object_types};
 use crate::types::subgraph::Qualified;
 use indexmap::IndexMap;
 use lang_graphql::ast::common::{self as ast};
+use open_dds::aggregates::AggregateExpressionName;
+use open_dds::models::{ModelGraphQlDefinitionV2, ModelName};
+use open_dds::relationships::{ModelRelationshipTarget, RelationshipTarget};
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub(crate) fn resolve_model_graphql_api(
     metadata_accessor: &open_dds::accessor::MetadataAccessor,
-    model_graphql_definition: &ModelGraphQlDefinition,
+    model_graphql_definition: &ModelGraphQlDefinitionV2,
     model: &models::Model,
-    existing_graphql_types: &mut BTreeSet<ast::TypeName>,
-    data_connector_scalars: &BTreeMap<
-        Qualified<DataConnectorName>,
-        data_connector_scalar_types::ScalarTypeWithRepresentationInfoMap,
-    >,
-    model_description: &Option<String>,
-    aggregate_expression_name: &Option<Qualified<AggregateExpressionName>>,
+    track_root_fields: &mut TrackGraphQLRootFields,
+    model_description: Option<&String>,
+    aggregate_expression_name: Option<&Qualified<AggregateExpressionName>>,
+    order_by_expression_identifier: Option<&Qualified<OrderByExpressionIdentifier>>,
+    order_by_expressions: &OrderByExpressions,
     graphql_config: &graphql_config::GraphqlConfig,
-) -> Result<ModelGraphQlApi, Error> {
+    graphql_types: &mut graphql_config::GraphqlTypeNames,
+    issues: &mut Vec<Warning>,
+) -> Result<ModelGraphQlApi, ModelGraphqlError> {
     let model_name = &model.name;
     let mut graphql_api = ModelGraphQlApi::default();
 
@@ -40,7 +42,7 @@ pub(crate) fn resolve_model_graphql_api(
             let field_type = &model
                 .type_fields
                 .get(field_name)
-                .ok_or_else(|| Error::UnknownFieldInUniqueIdentifier {
+                .ok_or_else(|| ModelGraphqlError::UnknownFieldInUniqueIdentifier {
                     model_name: model_name.clone(),
                     field_name: field_name.clone(),
                 })?
@@ -55,7 +57,6 @@ pub(crate) fn resolve_model_graphql_api(
                         &model.data_type,
                         model_source,
                         field_name,
-                        data_connector_scalars,
                         || "the unique identifier for select unique".to_string(),
                     )
                 })
@@ -69,13 +70,22 @@ pub(crate) fn resolve_model_graphql_api(
                 .insert(field_name.clone(), unique_identifier_field)
                 .is_some()
             {
-                return Err(Error::DuplicateFieldInUniqueIdentifier {
+                return Err(ModelGraphqlError::DuplicateFieldInUniqueIdentifier {
                     model_name: model_name.clone(),
                     field_name: field_name.clone(),
                 });
             }
         }
         let select_unique_field_name = mk_name(select_unique.query_root_field.as_str())?;
+        // Let's track and check if the select_unique field name is already used
+        track_root_fields
+            .track_query_root_field(&select_unique_field_name)
+            .unwrap_or_else(|error| {
+                issues.push(Warning::from(ModelGraphqlIssue::DuplicateRootField {
+                    model_name: model_name.clone(),
+                    error,
+                }));
+            });
         let select_unique_description = if select_unique.description.is_some() {
             select_unique.description.clone()
         } else {
@@ -83,7 +93,11 @@ pub(crate) fn resolve_model_graphql_api(
                 format!("Selects a single object from the model. Model description: {description}")
             })
         };
-
+        let subscription = select_unique
+            .subscription
+            .as_ref()
+            .map(|s| resolve_subscription_graphql_api(s, model_name, track_root_fields, issues))
+            .transpose()?;
         graphql_api
             .select_uniques
             .push(SelectUniqueGraphQlDefinition {
@@ -91,6 +105,7 @@ pub(crate) fn resolve_model_graphql_api(
                 unique_identifier: unique_identifier_fields,
                 description: select_unique_description,
                 deprecated: select_unique.deprecated.clone(),
+                subscription,
             });
     }
 
@@ -98,23 +113,23 @@ pub(crate) fn resolve_model_graphql_api(
         .source
         .as_ref()
         .map(
-            |model_source: &models::ModelSource| -> Result<Option<ModelOrderByExpression>, Error> {
-                let order_by_expression_type_name =
-                    match &model_graphql_definition.order_by_expression_type {
-                        None => Ok(None),
-                        Some(type_name) => mk_name(type_name.as_str()).map(ast::TypeName).map(Some),
-                    }?;
+            |model_source: &Arc<models::ModelSource>| -> Result<Option<ModelOrderByExpression>, ModelGraphqlError> {
+                let order_by_expression = order_by_expression_identifier.map(|n|
+                    order_by_expressions.objects.get(n)
+                    .ok_or_else(|| models::ModelsError::UnknownOrderByExpressionIdentifier {
+                        model_name: model.name.clone(),
+                        order_by_expression_identifier: n.clone()
+                    })).transpose()?;
+
                 // TODO: (paritosh) should we check for conflicting graphql types for default order_by type name as well?
-                store_new_graphql_type(
-                    existing_graphql_types,
-                    order_by_expression_type_name.as_ref(),
-                )?;
-                order_by_expression_type_name
-                    .map(|order_by_type_name| {
+                order_by_expression
+                    .and_then(|order_by_expression| {
+                        order_by_expression.graphql.clone()
+                        .map(|graphql| {
                         let object_types::TypeMapping::Object { field_mappings, .. } = model_source
                             .type_mappings
                             .get(&model.data_type)
-                            .ok_or(Error::TypeMappingRequired {
+                            .ok_or(models::ModelsError::TypeMappingRequired {
                                 model_name: model_name.clone(),
                                 type_name: model.data_type.clone(),
                                 data_connector: model_source.data_connector.name.clone(),
@@ -126,7 +141,7 @@ pub(crate) fn resolve_model_graphql_api(
                             if field_mapping.argument_mappings.is_empty() {
                                 order_by_fields.insert(
                                     field_name.clone(),
-                                    OrderByExpressionInfo {
+                                OrderByExpressionInfo {
                                         ndc_column: field_mapping.column.clone(),
                                     },
                                 );
@@ -134,18 +149,17 @@ pub(crate) fn resolve_model_graphql_api(
                         }
 
                         match &graphql_config.query.order_by_field_name {
-                            None => Err(Error::GraphqlConfigError {
-                                graphql_config_error:
-                                    graphql_config::GraphqlConfigError::MissingOrderByInputFieldInGraphqlConfig,
-                            }),
+                            None => Err(
+                                    graphql_config::GraphqlConfigError::MissingOrderByInputFieldInGraphqlConfig.into(),
+                            ),
                             Some(order_by_field_name) => Ok(ModelOrderByExpression {
                                 data_connector_name: model_source.data_connector.name.clone(),
-                                order_by_type_name,
-                                order_by_fields,
+                                order_by_type_name: graphql.expression_type_name,
                                 order_by_field_name: order_by_field_name.clone(),
+                                order_by_expression_identifier: order_by_expression.identifier.clone(),
                             }),
                         }
-                    })
+                    })})
                     .transpose()
             },
         )
@@ -156,20 +170,34 @@ pub(crate) fn resolve_model_graphql_api(
     graphql_api.select_many = match &model_graphql_definition.select_many {
         None => Ok(None),
         Some(gql_definition) => {
+            let subscription = gql_definition
+                .subscription
+                .as_ref()
+                .map(|s| resolve_subscription_graphql_api(s, model_name, track_root_fields, issues))
+                .transpose()?;
+
             mk_name(gql_definition.query_root_field.as_str()).map(|f: ast::Name| {
+                // Let's track and check if the select_many field name is already used
+                track_root_fields.track_query_root_field(&f).unwrap_or_else(|error| {
+                    issues.push(Warning::from(ModelGraphqlIssue::DuplicateRootField {
+                        model_name: model_name.clone(),
+                        error,
+                    }));
+                });
                 let select_many_description = if gql_definition.description.is_some() {
                     gql_definition.description.clone()
                 } else {
                     model_description.as_ref().map(|description| {
                         format!(
-                        "Selects multiple objects from the model. Model description: {description}"
-                    )
+                            "Selects multiple objects from the model. Model description: {description}"
+                        )
                     })
                 };
                 Some(SelectManyGraphQlDefinition {
                     query_root_field: f,
                     description: select_many_description,
                     deprecated: gql_definition.deprecated.clone(),
+                    subscription,
                 })
             })
         }
@@ -181,7 +209,9 @@ pub(crate) fn resolve_model_graphql_api(
         .as_ref()
         .map(|filter_input_type_name| mk_name(filter_input_type_name.as_str()).map(ast::TypeName))
         .transpose()?;
-    store_new_graphql_type(existing_graphql_types, filter_input_type_name.as_ref())?;
+
+    graphql_types.store(filter_input_type_name.as_ref())?;
+
     graphql_api.filter_input_type_name = filter_input_type_name;
 
     let aggregates_are_used_with_this_model_type = aggregate_expression_name.is_some()
@@ -190,47 +220,73 @@ pub(crate) fn resolve_model_graphql_api(
     // If aggregates are not used with this model type then we don't need a
     // filter input type name
     if graphql_api.filter_input_type_name.is_some() && !aggregates_are_used_with_this_model_type {
-        return Err(Error::UnnecessaryFilterInputTypeNameGraphqlConfiguration {
-            model_name: model_name.clone(),
-        });
+        issues.push(
+            ModelGraphqlIssue::UnnecessaryFilterInputTypeNameGraphqlConfiguration {
+                model_name: model_name.clone(),
+            }
+            .into(),
+        );
     }
     // But if they are used, then we need a filter input type name
     else if graphql_api.filter_input_type_name.is_none()
         && aggregates_are_used_with_this_model_type
     {
-        return Err(Error::MissingFilterInputTypeNameGraphqlConfiguration {
-            model_name: model_name.clone(),
-        });
+        return Err(
+            ModelGraphqlError::MissingFilterInputTypeNameGraphqlConfiguration {
+                model_name: model_name.clone(),
+            },
+        );
     }
 
     // record select_aggregate root field
-    graphql_api.select_aggregate = model_graphql_definition
-        .aggregate
-        .as_ref()
-        .zip(aggregate_expression_name.as_ref()) // Only matters if we have an aggregate expression specified
-        .map(
-            |(graphql_aggregate, aggregate_expression_name)| -> Result<_, Error> {
-                // Check that the filter input field name is configured in graphql config
-                let filter_input_field_name = graphql_config
-                    .query
-                    .aggregate_config
-                    .as_ref()
-                    .map(|agg| agg.filter_input_field_name.clone())
-                    .ok_or_else::<Error, _>(|| Error::GraphqlConfigError {
-                        graphql_config_error:
-                            graphql_config::GraphqlConfigError::MissingAggregateFilterInputFieldNameInGraphqlConfig,
-                    })?;
+    graphql_api.select_aggregate = match (
+        &model_graphql_definition.aggregate,
+        aggregate_expression_name,
+        &graphql_config.query.aggregate_config,
+    ) {
+        (Some(_graphql_aggregate), Some(_aggregate_expression_name), None) => {
+            // If the user has an aggregate expression and has specified the graphql select aggregate root field
+            // but is missing the global aggregate GraphqlConfig, this is probably a mistake and so let's raise
+            // a warning for them
+            issues.push(
+                ModelGraphqlIssue::MissingAggregateFilterInputFieldNameInGraphqlConfig {
+                    model_name: model_name.clone(),
+                }
+                .into(),
+            );
+            None
+        }
+        (Some(graphql_aggregate), Some(aggregate_expression_name), Some(aggregate_config)) => {
+            let subscription = graphql_aggregate
+                .subscription
+                .as_ref()
+                .map(|s| resolve_subscription_graphql_api(s, model_name, track_root_fields, issues))
+                .transpose()?;
 
-                Ok(SelectAggregateGraphQlDefinition {
-                    query_root_field: mk_name(graphql_aggregate.query_root_field.as_str())?,
-                    description: graphql_aggregate.description.clone(),
-                    deprecated: graphql_aggregate.deprecated.clone(),
-                    aggregate_expression_name: aggregate_expression_name.clone(),
-                    filter_input_field_name,
-                })
-            },
-        )
-        .transpose()?;
+            let aggregate_root_field = mk_name(graphql_aggregate.query_root_field.as_str())?;
+            // Let's track and check if the select_aggregate field name is already used
+            track_root_fields
+                .track_query_root_field(&aggregate_root_field)
+                .unwrap_or_else(|error| {
+                    issues.push(
+                        ModelGraphqlIssue::DuplicateRootField {
+                            model_name: model_name.clone(),
+                            error,
+                        }
+                        .into(),
+                    );
+                });
+            Some(SelectAggregateGraphQlDefinition {
+                query_root_field: aggregate_root_field,
+                description: graphql_aggregate.description.clone(),
+                deprecated: graphql_aggregate.deprecated.clone(),
+                aggregate_expression_name: aggregate_expression_name.clone(),
+                filter_input_field_name: aggregate_config.filter_input_field_name.clone(),
+                subscription,
+            })
+        }
+        _ => None,
+    };
 
     // record limit and offset field names
     graphql_api.limit_field = graphql_config
@@ -252,26 +308,29 @@ pub(crate) fn resolve_model_graphql_api(
 
     if model.arguments.is_empty() {
         if model_graphql_definition.arguments_input_type.is_some() {
-            return Err(Error::UnnecessaryModelArgumentsGraphQlInputConfiguration {
-                model_name: model_name.clone(),
-            });
+            issues.push(
+                ModelGraphqlIssue::UnnecessaryModelArgumentsGraphQlInputConfiguration {
+                    model_name: model_name.clone(),
+                }
+                .into(),
+            );
         }
     } else {
         let arguments_input_type_name = match &model_graphql_definition.arguments_input_type {
             None => Ok(None),
             Some(type_name) => mk_name(type_name.as_str()).map(ast::TypeName).map(Some),
         }?;
-        store_new_graphql_type(existing_graphql_types, arguments_input_type_name.as_ref())?;
+        graphql_types.store(arguments_input_type_name.as_ref())?;
 
         if let Some(type_name) = arguments_input_type_name {
             let argument_input_field_name = graphql_config
                 .query
                 .arguments_field_name
                 .as_ref()
-                .ok_or_else(|| Error::GraphqlConfigError {
-                    graphql_config_error:
-                        graphql_config::GraphqlConfigError::MissingArgumentsInputFieldInGraphqlConfig,
+                .ok_or_else(|| {
+                    ModelGraphqlError::from(graphql_config::GraphqlConfigError::MissingArgumentsInputFieldInGraphqlConfig)
                 })?;
+
             graphql_api.arguments_input_config = Some(ModelGraphqlApiArgumentsConfig {
                 field_name: argument_input_field_name.clone(),
                 type_name,
@@ -302,9 +361,39 @@ fn is_model_used_in_any_aggregate_relationship(
                 // And the target of the relationship is this model
                 target
                     .subgraph()
-                    .is_some_and(|subgraph| subgraph == model_name.subgraph.as_str())
+                    .is_some_and(|subgraph| subgraph == model_name.subgraph)
                     && *name == model_name.name
             }
             _ => false,
         })
+}
+
+fn resolve_subscription_graphql_api(
+    subscription: &open_dds::models::SubscriptionGraphQlDefinition,
+    model_name: &Qualified<ModelName>,
+    track_root_fields: &mut TrackGraphQLRootFields,
+    issues: &mut Vec<Warning>,
+) -> Result<SubscriptionGraphQlDefinition, ModelGraphqlError> {
+    let open_dds::models::SubscriptionGraphQlDefinition {
+        root_field,
+        description,
+        deprecated,
+        polling_interval_ms,
+    } = subscription;
+    let root_field_name = mk_name(root_field.as_str())?;
+    // Let's track and check if the subscription root field name is already used
+    track_root_fields
+        .track_subscription_root_field(&root_field_name)
+        .unwrap_or_else(|error| {
+            issues.push(Warning::from(ModelGraphqlIssue::DuplicateRootField {
+                model_name: model_name.clone(),
+                error,
+            }));
+        });
+    Ok(SubscriptionGraphQlDefinition {
+        root_field: root_field_name,
+        description: description.clone(),
+        deprecated: deprecated.clone(),
+        polling_interval_ms: *polling_interval_ms,
+    })
 }

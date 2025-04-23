@@ -241,17 +241,20 @@
     "Qualified_for_ModelName": {
       "type": "object",
       "required": [
-        "name",
-        "subgraph"
+        "name"
       ],
       "properties": {
         "subgraph": {
-          "type": "string"
+          "$ref": "#/definitions/SubgraphName"
         },
         "name": {
           "$ref": "#/definitions/ModelName"
         }
       }
+    },
+    "SubgraphName": {
+      "description": "The name of a subgraph.\n\nThis is different from 'SubgraphNameInput' which is more restrictive. A SubgraphName may refer to a user defined subgraph (through 'SubgraphNameInput') or a restricted namespace such as '__globals' or '__unknown_namespace'\n\nFurther, it may not be a valid identifier as v2 version of Metadata did not do any validation on namespaces. When we deprecate v2 version of metadata, this can switch to str_newtype over Identifier\n\nThis is also not meant to be used in any of the user facing metadata types, hence there is on 'OpenDD' trait implementation. However, there is a 'JsonSchema' trait implementation to help with query analytics",
+      "type": "string"
     },
     "ModelName": {
       "$id": "https://hasura.io/jsonschemas/metadata/ModelName",
@@ -263,12 +266,11 @@
     "Qualified_for_CommandName": {
       "type": "object",
       "required": [
-        "name",
-        "subgraph"
+        "name"
       ],
       "properties": {
         "subgraph": {
-          "type": "string"
+          "$ref": "#/definitions/SubgraphName"
         },
         "name": {
           "$ref": "#/definitions/CommandName"
@@ -285,6 +287,7 @@
     "FieldUsage": {
       "type": "object",
       "required": [
+        "deprecated",
         "name",
         "opendd_type"
       ],
@@ -294,6 +297,15 @@
         },
         "opendd_type": {
           "$ref": "#/definitions/Qualified_for_CustomTypeName"
+        },
+        "deprecated": {
+          "type": "boolean"
+        },
+        "deprecated_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -307,12 +319,11 @@
     "Qualified_for_CustomTypeName": {
       "type": "object",
       "required": [
-        "name",
-        "subgraph"
+        "name"
       ],
       "properties": {
         "subgraph": {
-          "type": "string"
+          "$ref": "#/definitions/SubgraphName"
         },
         "name": {
           "$ref": "#/definitions/CustomTypeName"
@@ -396,15 +407,16 @@
         "relationships": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/RelationshipUsage"
+            "$ref": "#/definitions/PredicateRelationshipUsage"
           }
         }
       }
     },
-    "RelationshipUsage": {
+    "PredicateRelationshipUsage": {
       "type": "object",
       "required": [
         "name",
+        "predicate_usage",
         "source",
         "target"
       ],
@@ -417,6 +429,9 @@
         },
         "target": {
           "$ref": "#/definitions/RelationshipTarget"
+        },
+        "predicate_usage": {
+          "$ref": "#/definitions/FilterPredicateUsage"
         }
       }
     },
@@ -438,15 +453,26 @@
             "model": {
               "type": "object",
               "required": [
+                "mapping",
                 "model_name",
+                "opendd_type",
                 "relationship_type"
               ],
               "properties": {
                 "model_name": {
                   "$ref": "#/definitions/Qualified_for_ModelName"
                 },
+                "opendd_type": {
+                  "$ref": "#/definitions/Qualified_for_CustomTypeName"
+                },
                 "relationship_type": {
                   "$ref": "#/definitions/RelationshipType"
+                },
+                "mapping": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/RelationshipModelMapping"
+                  }
                 }
               }
             }
@@ -462,11 +488,22 @@
             "command": {
               "type": "object",
               "required": [
-                "command_name"
+                "command_name",
+                "mapping",
+                "opendd_type"
               ],
               "properties": {
                 "command_name": {
                   "$ref": "#/definitions/Qualified_for_CommandName"
+                },
+                "opendd_type": {
+                  "$ref": "#/definitions/UnTaggedQualifiedTypeName"
+                },
+                "mapping": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/RelationshipCommandMapping"
+                  }
                 }
               }
             }
@@ -495,6 +532,93 @@
         }
       ]
     },
+    "RelationshipModelMapping": {
+      "type": "object",
+      "required": [
+        "source_field",
+        "target"
+      ],
+      "properties": {
+        "source_field": {
+          "$ref": "#/definitions/FieldName"
+        },
+        "target": {
+          "$ref": "#/definitions/RelationshipModelMappingTarget"
+        }
+      }
+    },
+    "RelationshipModelMappingTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "field"
+          ],
+          "properties": {
+            "field": {
+              "$ref": "#/definitions/FieldName"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "argument"
+          ],
+          "properties": {
+            "argument": {
+              "$ref": "#/definitions/ArgumentName"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ArgumentName": {
+      "$id": "https://hasura.io/jsonschemas/metadata/ArgumentName",
+      "title": "ArgumentName",
+      "description": "The name of an argument.",
+      "type": "string",
+      "pattern": "^[_a-zA-Z][_a-zA-Z0-9]*$"
+    },
+    "UnTaggedQualifiedTypeName": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/InbuiltType"
+        },
+        {
+          "$ref": "#/definitions/Qualified_for_CustomTypeName"
+        }
+      ]
+    },
+    "InbuiltType": {
+      "title": "InbuiltType",
+      "description": "An inbuilt primitive OpenDD type.",
+      "type": "string",
+      "enum": [
+        "ID",
+        "Int",
+        "Float",
+        "Boolean",
+        "String"
+      ]
+    },
+    "RelationshipCommandMapping": {
+      "type": "object",
+      "required": [
+        "source_field",
+        "target_argument"
+      ],
+      "properties": {
+        "source_field": {
+          "$ref": "#/definitions/FieldName"
+        },
+        "target_argument": {
+          "$ref": "#/definitions/ArgumentName"
+        }
+      }
+    },
     "ArgumentPresetsUsage": {
       "type": "object",
       "required": [
@@ -504,16 +628,39 @@
         "arguments": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/DataConnectorArgumentName"
+            "$ref": "#/definitions/ArgumentName"
           }
         }
       }
     },
-    "DataConnectorArgumentName": {
-      "$id": "https://hasura.io/jsonschemas/metadata/DataConnectorArgumentName",
-      "title": "DataConnectorArgumentName",
-      "description": "The name of an argument as defined by a data connector.",
-      "type": "string"
+    "RelationshipUsage": {
+      "type": "object",
+      "required": [
+        "deprecated",
+        "name",
+        "source",
+        "target"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/RelationshipName"
+        },
+        "source": {
+          "$ref": "#/definitions/Qualified_for_CustomTypeName"
+        },
+        "target": {
+          "$ref": "#/definitions/RelationshipTarget"
+        },
+        "deprecated": {
+          "type": "boolean"
+        },
+        "deprecated_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

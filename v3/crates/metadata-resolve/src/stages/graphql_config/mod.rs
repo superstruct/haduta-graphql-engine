@@ -15,7 +15,8 @@ use crate::helpers::types::mk_name;
 pub use error::GraphqlConfigError;
 pub use types::{
     AggregateGraphqlConfig, FilterInputGraphqlConfig, FilterInputOperatorNames,
-    GlobalGraphqlConfig, GraphqlConfig, OrderByInputGraphqlConfig, QueryGraphqlConfig,
+    GlobalGraphqlConfig, GraphqlConfig, GraphqlTypeNames, MultipleOrderByInputObjectFields,
+    OrderByInputGraphqlConfig, QueryGraphqlConfig,
 };
 
 /// Resolve and validate the GraphQL configuration.
@@ -34,19 +35,19 @@ pub use types::{
 ///     * if the flag is not set, use the fallback object
 pub fn resolve(
     graphql_configs: &Vec<QualifiedObject<graphql_config::GraphqlConfig>>,
-    flags: open_dds::flags::Flags,
+    flags: &open_dds::flags::OpenDdFlags,
 ) -> Result<GraphqlConfig, GraphqlConfigError> {
     if graphql_configs.is_empty() {
-        if flags.require_graphql_config {
+        if flags.contains(open_dds::flags::Flag::RequireGraphqlConfig) {
             return Err(GraphqlConfigError::MissingGraphqlConfig);
         }
-        resolve_graphql_config(fallback_graphql_config())
+        resolve_graphql_config(fallback_graphql_config(), flags)
     } else {
         match graphql_configs.as_slice() {
             // There should only be one graphql config in supergraph
             // Because this config can only be defined in once in a supergraph, it doesn't actually
             // matter which subgraph defines it: the outcome will be the same.
-            [graphql_config] => resolve_graphql_config(&graphql_config.object),
+            [graphql_config] => resolve_graphql_config(&graphql_config.object, flags),
             _ => Err(GraphqlConfigError::MultipleGraphqlConfigDefinition),
         }
     }
@@ -56,6 +57,7 @@ pub fn resolve(
 /// For example, make sure all names are valid GraphQL names.
 pub fn resolve_graphql_config(
     graphql_config: &open_dds::graphql_config::GraphqlConfig,
+    flags: &open_dds::flags::OpenDdFlags,
 ) -> Result<GraphqlConfig, GraphqlConfigError> {
     match graphql_config {
         open_dds::graphql_config::GraphqlConfig::V1(graphql_config_metadata) => {
@@ -112,6 +114,15 @@ pub fn resolve_graphql_config(
                     .root_operation_type_name
                     .as_str(),
             )?);
+            let subscription_root_type_name = graphql_config_metadata
+                .subscription
+                .as_ref()
+                .map(|subscription_config| {
+                    Ok(ast::TypeName(mk_name(
+                        subscription_config.root_operation_type_name.as_str(),
+                    )?))
+                })
+                .transpose()?;
 
             let order_by_input = match &graphql_config_metadata.query.order_by_input {
                 None => None,
@@ -192,8 +203,21 @@ pub fn resolve_graphql_config(
                 global: GlobalGraphqlConfig {
                     query_root_type_name,
                     mutation_root_type_name,
+                    subscription_root_type_name,
                     order_by_input,
                     enable_apollo_federation_fields,
+                    bypass_relation_comparisons_ndc_capability: flags
+                        .contains(open_dds::flags::Flag::BypassRelationComparisonsNdcCapability),
+                    propagate_boolean_expression_deprecation_status: flags.contains(
+                        open_dds::flags::Flag::PropagateBooleanExpressionDeprecationStatus,
+                    ),
+                    multiple_order_by_input_object_fields: if flags.contains(
+                        open_dds::flags::Flag::DisallowMultipleInputObjectFieldsInGraphqlOrderBy,
+                    ) {
+                        MultipleOrderByInputObjectFields::Disallow
+                    } else {
+                        MultipleOrderByInputObjectFields::Allow
+                    },
                 },
             })
         }
@@ -247,6 +271,7 @@ fn fallback_graphql_config() -> &'static graphql_config::GraphqlConfig {
             mutation: graphql_config::MutationGraphqlConfig {
                 root_operation_type_name: GraphQlTypeName::from("Mutation"),
             },
+            subscription: None,
             apollo_federation: None,
         })
     })

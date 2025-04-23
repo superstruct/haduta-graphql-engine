@@ -62,7 +62,7 @@ import Hasura.NativeQuery.Validation
 import Hasura.Prelude
 import Hasura.RQL.DDL.Relationship (defaultBuildArrayRelationshipInfo, defaultBuildObjectRelationshipInfo)
 import Hasura.RQL.IR.BoolExp (ComparisonNullability (..), OpExpG (..), PartialSQLExp (..), RootOrCurrent (..), RootOrCurrentColumn (..))
-import Hasura.RQL.Types.Backend (FunctionReturnType (..), functionGraphQLName)
+import Hasura.RQL.Types.Backend (FunctionReturnType, functionGraphQLName)
 import Hasura.RQL.Types.BackendType (BackendSourceKind (..), BackendType (..))
 import Hasura.RQL.Types.Column qualified as RQL.T.C
 import Hasura.RQL.Types.Common (JsonAggSelect (JASMultipleRows, JASSingleObject), OID (..), SourceName, SystemDefined)
@@ -117,7 +117,7 @@ instance BackendMetadata 'DataConnector where
   getTableInfo = getTableInfo'
   supportsBeingRemoteRelationshipTarget = supportsBeingRemoteRelationshipTarget'
 
-  validateNativeQuery _disableNativeQueryValidation _ _ _ sc _ nq = do
+  validateNativeQuery _disableNativeQueryValidation sc _ nq = do
     unless (isJust (API._cInterpolatedQueries (DC._scCapabilities sc))) do
       let nqName = _nqmRootFieldName nq
       throw400 NotSupported $ "validateNativeQuery: " <> toTxt nqName <> " - Native Queries not implemented for this Data Connector backend."

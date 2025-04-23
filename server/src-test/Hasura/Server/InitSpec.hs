@@ -91,6 +91,7 @@ emptyServeOptionsRaw =
       rsoGracefulShutdownTimeout = Nothing,
       rsoWebSocketConnectionInitTimeout = Nothing,
       rsoEnableMetadataQueryLoggingEnv = Logging.MetadataQueryLoggingDisabled,
+      rsoHttpLogQueryOnlyOnError = Logging.HttpLogQueryOnlyOnErrorDisabled,
       rsoDefaultNamingConvention = Nothing,
       rsoExtensionsSchema = Nothing,
       rsoMetadataDefaults = Nothing,
@@ -104,7 +105,8 @@ emptyServeOptionsRaw =
       rsoRemoteSchemaResponsePriority = Nothing,
       rsoHeaderPrecedence = Nothing,
       rsoTraceQueryStatus = Nothing,
-      rsoDisableNativeQueryValidation = NativeQuery.AlwaysValidateNativeQueries
+      rsoDisableNativeQueryValidation = NativeQuery.AlwaysValidateNativeQueries,
+      rsoPreserve401Errors = UUT.MapEverythingTo200
     }
 
 mkServeOptionsSpec :: Hspec.Spec

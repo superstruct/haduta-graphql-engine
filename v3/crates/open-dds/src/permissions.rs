@@ -1,15 +1,17 @@
 use indexmap::IndexSet;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error};
 use serde_json::Value as JsonValue;
 
 use crate::{
     arguments::ArgumentName,
     commands::CommandName,
+    impl_JsonSchema_with_OpenDd_for,
     models::ModelName,
     relationships::RelationshipName,
-    session_variables::SessionVariable,
-    traits,
+    session_variables::SessionVariableName,
+    spanned::Spanned,
+    traits::{self, OpenDd, OpenDdDeserializeError},
     types::{CustomTypeName, FieldName, OperatorName},
 };
 
@@ -40,9 +42,9 @@ impl Role {
 /// Preset value for an argument
 pub struct ArgumentPreset {
     /// Argument name for preset
-    pub argument: ArgumentName,
+    pub argument: Spanned<ArgumentName>,
     /// Value for preset
-    pub value: ValueExpressionOrPredicate,
+    pub value: Spanned<ValueExpressionOrPredicate>,
 }
 
 #[derive(Serialize, Clone, Debug, Eq, PartialEq, opendds_derive::OpenDd)]
@@ -188,7 +190,11 @@ pub struct FieldPreset {
 #[serde(rename_all = "camelCase")]
 #[opendd(
     as_versioned_with_definition,
-    json_schema(title = "ModelPermissions", example = "ModelPermissions::example")
+    json_schema(
+        title = "ModelPermissions",
+        example = "ModelPermissions::field_comparison_example",
+        example = "ModelPermissions::relationship_comparison_example"
+    )
 )]
 /// Definition of permissions for an OpenDD model.
 pub enum ModelPermissions {
@@ -196,7 +202,7 @@ pub enum ModelPermissions {
 }
 
 impl ModelPermissions {
-    fn example() -> serde_json::Value {
+    fn field_comparison_example() -> serde_json::Value {
         serde_json::json!(
             {
                 "kind": "ModelPermissions",
@@ -230,6 +236,45 @@ impl ModelPermissions {
         )
     }
 
+    fn relationship_comparison_example() -> serde_json::Value {
+        serde_json::json!(
+            {
+                "kind": "ModelPermissions",
+                "version": "v1",
+                "definition": {
+                    "modelName": "Articles",
+                    "permissions": [
+                        {
+                            "role": "admin",
+                            "select": {
+                                "filter": null
+                            }
+                        },
+                        {
+                            "role": "user",
+                            "select": {
+                                "filter": {
+                                    "relationship": {
+                                        "name": "author",
+                                        "predicate": {
+                                            "fieldComparison": {
+                                                "field": "id",
+                                                "operator": "_eq",
+                                                "value": {
+                                                    "sessionVariable": "x-hasura-user-id"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+    }
+
     pub fn upgrade(self) -> ModelPermissionsV1 {
         match self {
             ModelPermissions::V1(v1) => v1,
@@ -243,7 +288,7 @@ impl ModelPermissions {
 /// Definition of permissions for an OpenDD model.
 pub struct ModelPermissionsV1 {
     /// The name of the model for which permissions are being defined.
-    pub model_name: ModelName,
+    pub model_name: Spanned<ModelName>,
     /// A list of model permissions, one for each role.
     pub permissions: Vec<ModelPermission>,
 }
@@ -254,7 +299,7 @@ pub struct ModelPermissionsV1 {
 /// Defines the permissions for an OpenDD model.
 pub struct ModelPermission {
     /// The role for which permissions are being defined.
-    pub role: Role,
+    pub role: Spanned<Role>,
     /// The permissions for selecting from this model for this role.
     /// If this is null, the role is not allowed to query the model.
     pub select: Option<SelectPermission>,
@@ -299,6 +344,9 @@ pub struct SelectPermission {
     /// Preset values for arguments for this role
     #[opendd(default, json_schema(default_exp = "serde_json::json!([])"))]
     pub argument_presets: Vec<ArgumentPreset>,
+    /// Whether the role is allowed to subscribe to the root fields of this model.
+    #[opendd(default, json_schema(default_exp = "serde_json::json!(false)"))]
+    pub allow_subscriptions: bool,
 }
 
 // We use this instead of an Option, so that we can make the filter field in
@@ -312,23 +360,21 @@ pub enum NullableModelPredicate {
 }
 
 impl traits::OpenDd for NullableModelPredicate {
-    fn deserialize(json: serde_json::Value) -> Result<Self, traits::OpenDdDeserializeError> {
+    fn deserialize(
+        json: serde_json::Value,
+        path: jsonpath::JSONPath,
+    ) -> Result<Self, traits::OpenDdDeserializeError> {
         if json.is_null() {
             Ok(NullableModelPredicate::Null(()))
         } else {
-            Ok(NullableModelPredicate::NotNull(
-                serde_path_to_error::deserialize(json).map_err(|e| {
-                    traits::OpenDdDeserializeError {
-                        path: traits::JSONPath::from_serde_path(e.path()),
-                        error: e.into_inner(),
-                    }
-                })?,
-            ))
+            Ok(NullableModelPredicate::NotNull(OpenDd::deserialize(
+                json, path,
+            )?))
         }
     }
 
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        <Self as schemars::JsonSchema>::json_schema(gen)
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        <Self as schemars::JsonSchema>::json_schema(generator)
     }
 
     fn _schema_name() -> String {
@@ -433,116 +479,311 @@ pub struct CommandPermissionsV1 {
     pub permissions: Vec<CommandPermission>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[derive(Serialize, Clone, Debug, Eq, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-#[schemars(title = "FieldComparisonPredicate")]
+#[opendd(json_schema(title = "FieldComparisonPredicate"))]
 /// Field comparison predicate filters objects based on a field value.
 pub struct FieldComparisonPredicate {
     /// The field name of the object type of the model to compare.
-    pub field: FieldName,
+    pub field: Spanned<FieldName>,
     /// The name of the operator to use for comparison.
-    pub operator: OperatorName,
+    pub operator: Spanned<OperatorName>,
     /// The value expression to compare against.
     // When we support custom operators, we can make this optional
     pub value: ValueExpression,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[derive(Serialize, Clone, Debug, Eq, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-#[schemars(title = "FieldIsNullPredicate")]
+#[opendd(json_schema(title = "FieldIsNullPredicate"))]
 /// Predicate to check if the given field is null.
 pub struct FieldIsNullPredicate {
     /// The name of the field that should be checked for a null value.
-    pub field: FieldName,
+    pub field: Spanned<FieldName>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[derive(Serialize, Clone, Debug, Eq, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-#[schemars(title = "RelationshipPredicate")]
+#[opendd(json_schema(title = "RelationshipPredicate"))]
 /// Relationship predicate filters objects of a source model based on a predicate on the related model.
 pub struct RelationshipPredicate {
     /// The name of the relationship of the object type of the model to follow.
-    pub name: RelationshipName,
+    pub name: Spanned<RelationshipName>,
     /// The predicate to apply on the related objects. If this is null, then the predicate
     /// evaluates to true as long as there is at least one related object present.
     pub predicate: Option<Box<ModelPredicate>>,
 }
 
+#[derive(Serialize, Clone, Debug, Eq, PartialEq, opendds_derive::OpenDd)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+#[opendd(json_schema(title = "NestedFieldPredicate"))]
+/// Nested field predicate filters objects of a source model based on a predicate on the nested
+/// field.
+pub struct NestedFieldPredicate {
+    /// The name of the field in the object type of the model to follow.
+    pub field_name: Spanned<FieldName>,
+    /// The predicate to apply on the related objects.
+    pub predicate: Box<ModelPredicate>,
+}
+
 // Predicates that use NDC operators pushed down to NDC. `ValueExpressions` are
 // evaluated on the server.
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-#[schemars(title = "ModelPredicate")]
-#[schemars(example = "ModelPredicate::example")]
-#[serde(deny_unknown_fields)]
+#[derive(Serialize, Clone, Debug, Eq, PartialEq, opendds_derive::OpenDd)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[opendd(
+    externally_tagged,
+    json_schema(
+        title = "ModelPredicate",
+        example = "ModelPredicate::field_comparison_example",
+        example = "ModelPredicate::relationship_comparison_example",
+        example = "ModelPredicate::and_comparisons_example",
+        example = "ModelPredicate::not_comparison_example"
+    )
+)]
 /// A predicate that can be used to restrict the objects returned when querying a model.
 pub enum ModelPredicate {
     /// Filters objects based on a field value.
     FieldComparison(FieldComparisonPredicate),
     FieldIsNull(FieldIsNullPredicate),
     // TODO: Remote relationships are disallowed for now
+    /// Filters objects based on the nested field of a model.
+    NestedField(NestedFieldPredicate),
     /// Filters objects based on the relationship of a model.
     Relationship(RelationshipPredicate),
-    #[schemars(title = "And")]
+    #[opendd(json_schema(title = "And"))]
     /// Evaluates to true if all sub-predicates evaluate to true.
     And(Vec<ModelPredicate>),
-    #[schemars(title = "Or")]
+    #[opendd(json_schema(title = "Or"))]
     /// Evaluates to true if any of the sub-predicates evaluate to true.
     Or(Vec<ModelPredicate>),
-    #[schemars(title = "Not")]
+    #[opendd(json_schema(title = "Not"))]
     /// Evaluates to true if the sub-predicate evaluates to false.
     Not(Box<ModelPredicate>),
     // TODO: Figure out the story with _ceq
 }
 
+impl_JsonSchema_with_OpenDd_for!(ModelPredicate);
+
 impl ModelPredicate {
-    fn example() -> Self {
+    fn field_comparison_example() -> JsonValue {
         serde_json::from_str(
             r#"
-            {
-                "fieldComparison": {
-                  "field": "author_id",
-                  "operator": "_eq",
-                  "value": {
-                    "sessionVariable": "x-hasura-user-id"
-                  }
+                {
+                    "fieldComparison": {
+                        "field": "author_id",
+                        "operator": "_eq",
+                        "value": {
+                            "sessionVariable": "x-hasura-user-id"
+                        }
+                    }
                 }
-            }
-        "#,
+            "#,
+        )
+        .unwrap()
+    }
+
+    fn relationship_comparison_example() -> JsonValue {
+        serde_json::from_str(
+            r#"{
+                "relationship": {
+                    "name": "author",
+                    "predicate": {
+                        "fieldComparison": {
+                            "field": "id",
+                            "operator": "_eq",
+                            "value": {
+                                "sessionVariable": "x-hasura-user-id"
+                            }
+                        }
+                    }
+                }
+            }"#,
+        )
+        .unwrap()
+    }
+
+    fn and_comparisons_example() -> JsonValue {
+        serde_json::from_str(
+            r#"{
+                "and": [
+                    {
+                        "fieldComparison": {
+                            "field": "author_id",
+                            "operator": "_eq",
+                            "value": {
+                                "sessionVariable": "x-hasura-user-id"
+                            }
+                        }
+                    },
+                    {
+                        "fieldComparison": {
+                            "field": "title",
+                            "operator": "_eq",
+                            "value": {
+                                "literal": "Hello World"
+                            }
+                        }
+                    }
+                ]
+            }"#,
+        )
+        .unwrap()
+    }
+
+    fn not_comparison_example() -> JsonValue {
+        serde_json::from_str(
+            r#"{
+                "not": {
+                    "fieldComparison": {
+                        "field": "author_id",
+                        "operator": "_eq",
+                        "value": {
+                            "sessionVariable": "x-hasura-user-id"
+                        }
+                    }
+                }
+            }"#,
         )
         .unwrap()
     }
 }
 
-#[derive(
-    Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, opendds_derive::OpenDd,
-)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-#[schemars(title = "ValueExpression")]
 /// An expression which evaluates to a value that can be used in permissions and
 /// various presets.
+// If you are adding a new variant, make sure to add it to the `ValueExpressionImpl` enum as well.
 pub enum ValueExpression {
-    #[schemars(title = "Literal")]
+    #[serde(alias = "value")]
     Literal(JsonValue),
-    #[schemars(title = "SessionVariable")]
-    SessionVariable(SessionVariable),
+    SessionVariable(SessionVariableName),
 }
 
-#[derive(
-    Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, opendds_derive::OpenDd,
-)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-#[schemars(title = "ValueExpressionOrPredicate")]
 /// An expression which evaluates to a value that can be used in permissions and
 /// various presets.
+// If you are adding a new variant, make sure to add it to the `ValueExpressionOrPredicateImpl` enum as well.
 pub enum ValueExpressionOrPredicate {
-    #[schemars(title = "Literal")]
+    #[serde(alias = "value")]
     Literal(JsonValue),
-    #[schemars(title = "SessionVariable")]
-    SessionVariable(SessionVariable),
-    #[schemars(title = "BooleanExpression")]
+    SessionVariable(SessionVariableName),
     BooleanExpression(Box<ModelPredicate>),
 }
+
+// Similar to `EnvironmentValue`, but for ValueExpression.
+// We want to add environment variables to ValueExpression and be consistent with how we define environment variables in other places.
+// Specifically, we want to be able to define environment variables in the metadata as:
+// ```json
+// {
+//     "valueFromEnv": "ENV_VAR1"
+// }
+// ```
+
+/// An expression which evaluates to a value that can be used in permissions and
+/// various presets.
+#[derive(Serialize, Clone, Debug, opendds_derive::OpenDd)]
+#[serde(rename_all = "camelCase")]
+#[opendd(externally_tagged, json_schema(title = "ValueExpression"))]
+// Either a literal value or a session variable or a reference to a Hasura secret
+pub enum ValueExpressionImpl {
+    #[opendd(json_schema(title = "Literal"), alias = "value")]
+    Literal(JsonValue),
+    #[opendd(json_schema(title = "SessionVariable"))]
+    SessionVariable(SessionVariableName),
+    #[opendd(json_schema(title = "ValueFromEnv"))]
+    ValueFromEnv(String),
+}
+
+// Similar to `ValueExpressionImpl`, but for ValueExpressionOrPredicate.
+/// An expression which evaluates to a value that can be used in permissions and
+/// various presets.
+#[derive(Serialize, Clone, Debug, opendds_derive::OpenDd)]
+#[serde(rename_all = "camelCase")]
+#[opendd(externally_tagged, json_schema(title = "ValueExpressionOrPredicate"))]
+// Either a literal value or a session variable or a boolean expression or a reference to a Hasura secret
+pub enum ValueExpressionOrPredicateImpl {
+    #[opendd(json_schema(title = "Literal"), alias = "value")]
+    Literal(JsonValue),
+    #[opendd(json_schema(title = "SessionVariable"))]
+    SessionVariable(SessionVariableName),
+    #[opendd(json_schema(title = "BooleanExpression"))]
+    BooleanExpression(Box<ModelPredicate>),
+    #[opendd(json_schema(title = "ValueFromEnv"))]
+    ValueFromEnv(String),
+}
+
+impl traits::OpenDd for ValueExpression {
+    fn deserialize(
+        json: serde_json::Value,
+        _path: jsonpath::JSONPath,
+    ) -> Result<Self, traits::OpenDdDeserializeError> {
+        serde_path_to_error::deserialize(json).map_err(|e| traits::OpenDdDeserializeError {
+            path: jsonpath::JSONPath::from_serde_path(e.path()),
+            error: e.into_inner(),
+        })
+    }
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut s = ValueExpressionImpl::json_schema(generator);
+        if let schemars::schema::Schema::Object(o) = &mut s {
+            if let Some(m) = &mut o.metadata {
+                m.id = Some("https://hasura.io/jsonschemas/metadata/ValueExpression".into());
+            }
+        }
+        s
+    }
+    fn _schema_name() -> String {
+        "ValueExpression".to_owned()
+    }
+    fn _schema_is_referenceable() -> bool {
+        true
+    }
+}
+
+impl_JsonSchema_with_OpenDd_for!(ValueExpression);
+
+impl traits::OpenDd for ValueExpressionOrPredicate {
+    fn deserialize(
+        json: serde_json::Value,
+        path: jsonpath::JSONPath,
+    ) -> Result<Self, OpenDdDeserializeError> {
+        match OpenDd::deserialize(json, path.clone())? {
+            ValueExpressionOrPredicateImpl::Literal(literal) => Ok(Self::Literal(literal)),
+            ValueExpressionOrPredicateImpl::SessionVariable(session_variable) => {
+                Ok(Self::SessionVariable(session_variable))
+            }
+            ValueExpressionOrPredicateImpl::BooleanExpression(predicate) => {
+                Ok(Self::BooleanExpression(predicate))
+            }
+            ValueExpressionOrPredicateImpl::ValueFromEnv(_) => Err(OpenDdDeserializeError {
+                path,
+                error: serde_json::Error::custom(
+                    "valueFromEnv should have been inlined into a literal during build",
+                ),
+            }),
+        }
+    }
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut s = ValueExpressionOrPredicateImpl::json_schema(generator);
+        if let schemars::schema::Schema::Object(o) = &mut s {
+            if let Some(m) = &mut o.metadata {
+                m.id = Some(
+                    "https://hasura.io/jsonschemas/metadata/ValueExpressionOrPredicate".into(),
+                );
+            }
+        }
+        s
+    }
+    fn _schema_name() -> String {
+        "ValueExpressionOrPredicate".to_owned()
+    }
+    fn _schema_is_referenceable() -> bool {
+        true
+    }
+}
+
+impl_JsonSchema_with_OpenDd_for!(ValueExpressionOrPredicate);

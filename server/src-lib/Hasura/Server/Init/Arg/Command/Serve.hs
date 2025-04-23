@@ -26,6 +26,7 @@ module Hasura.Server.Init.Arg.Command.Serve
     corsDomainOption,
     disableCorsOption,
     enableConsoleOption,
+    preserve401ErrorsOption,
     consoleAssetsDirOption,
     consoleSentryDsnOption,
     enableTelemetryOption,
@@ -59,6 +60,7 @@ module Hasura.Server.Init.Arg.Command.Serve
     gracefulShutdownOption,
     webSocketConnectionInitTimeoutOption,
     enableMetadataQueryLoggingOption,
+    httpLogQueryOnlyOnErrorOption,
     defaultNamingConventionOption,
     metadataDBExtensionsSchemaOption,
     parseMetadataDefaults,
@@ -99,6 +101,7 @@ import Hasura.RQL.Types.Schema.Options qualified as Options
 import Hasura.Server.Auth qualified as Auth
 import Hasura.Server.Cors qualified as Cors
 import Hasura.Server.Init.Arg.PrettyPrinter qualified as PP
+import Hasura.Server.Init.Config (Preserve401ErrorsStatus (..))
 import Hasura.Server.Init.Config qualified as Config
 import Hasura.Server.Init.Env qualified as Env
 import Hasura.Server.Logging qualified as Server.Logging
@@ -158,6 +161,7 @@ serveCommandParser =
     <*> parseGracefulShutdownTimeout
     <*> parseWebSocketConnectionInitTimeout
     <*> parseEnableMetadataQueryLogging
+    <*> parseHttpLogQueryOnlyOnError
     <*> parseDefaultNamingConvention
     <*> parseExtensionsSchema
     <*> parseMetadataDefaults
@@ -172,6 +176,7 @@ serveCommandParser =
     <*> parseConfiguredHeaderPrecedence
     <*> parseTraceQueryStatus
     <*> parseDisableNativeQueryValidation
+    <*> parsePreserve401Errors
 
 --------------------------------------------------------------------------------
 -- Serve Options
@@ -1165,6 +1170,22 @@ enableMetadataQueryLoggingOption =
       Config._helpMessage = "Enables the query field in http-logs for metadata queries (default: false)"
     }
 
+parseHttpLogQueryOnlyOnError :: Opt.Parser Server.Logging.HttpLogQueryOnlyOnError
+parseHttpLogQueryOnlyOnError =
+  fmap (bool Server.Logging.HttpLogQueryOnlyOnErrorDisabled Server.Logging.HttpLogQueryOnlyOnErrorEnabled)
+    $ Opt.switch
+      ( Opt.long "http-log-query-only-on-error"
+          <> Opt.help (Config._helpMessage httpLogQueryOnlyOnErrorOption)
+      )
+
+httpLogQueryOnlyOnErrorOption :: Config.Option Server.Logging.HttpLogQueryOnlyOnError
+httpLogQueryOnlyOnErrorOption =
+  Config.Option
+    { Config._default = Server.Logging.HttpLogQueryOnlyOnErrorDisabled,
+      Config._envVar = "HASURA_GRAPHQL_HTTP_LOG_QUERY_ONLY_ON_ERROR",
+      Config._helpMessage = "Only add query to http log on error (default: false)"
+    }
+
 -- TODO(SOLOMON): The defaulting behavior for this occurs inside the Engine. In
 -- an isolated PR we should move that defaulting in the parsing stage.
 parseDefaultNamingConvention :: Opt.Parser (Maybe NC.NamingCase)
@@ -1389,6 +1410,23 @@ traceQueryStatusOption =
         "Enable query tracing for all queries. (default: false)"
     }
 
+parsePreserve401Errors :: Opt.Parser Preserve401ErrorsStatus
+parsePreserve401Errors =
+  (bool MapEverythingTo200 Preserve401Errors)
+    <$> Opt.switch
+      ( Opt.long "preserve-401-errors"
+          <> Opt.help (Config._helpMessage preserve401ErrorsOption)
+      )
+
+preserve401ErrorsOption :: Config.Option Preserve401ErrorsStatus
+preserve401ErrorsOption =
+  Config.Option
+    { Config._default = MapEverythingTo200,
+      Config._envVar = "HASURA_GRAPHQL_PRESERVE_401_ERRORS",
+      Config._helpMessage =
+        "Preserve HTTP 401 status codes from webhook auth responses and JWT auth failures. (default: false)"
+    }
+
 --------------------------------------------------------------------------------
 -- Pretty Printer
 
@@ -1495,6 +1533,7 @@ serveCmdFooter =
         Config.optionPP asyncActionsFetchBatchSizeOption,
         Config.optionPP persistedQueriesOption,
         Config.optionPP persistedQueriesTtlOption,
-        Config.optionPP configuredHeaderPrecedenceOption
+        Config.optionPP configuredHeaderPrecedenceOption,
+        Config.optionPP preserve401ErrorsOption
       ]
     eventEnvs = [Config.optionPP graphqlEventsHttpPoolSizeOption, Config.optionPP graphqlEventsFetchIntervalOption]

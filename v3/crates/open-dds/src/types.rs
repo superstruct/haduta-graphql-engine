@@ -1,12 +1,5 @@
 use std::ops::Deref;
 
-use indexmap::IndexMap;
-use schemars::JsonSchema;
-use serde::{
-    de::value::{StrDeserializer, StringDeserializer},
-    Deserialize, Serialize,
-};
-
 use crate::commands::ArgumentMapping;
 use crate::{
     arguments::ArgumentName,
@@ -19,6 +12,12 @@ use crate::{
     models::EnableAllOrSpecific,
     str_newtype,
 };
+use indexmap::IndexMap;
+use schemars::JsonSchema;
+use serde::{
+    Deserialize, Serialize,
+    de::value::{StrDeserializer, StringDeserializer},
+};
 
 #[derive(
     Serialize,
@@ -28,6 +27,8 @@ use crate::{
     Debug,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     JsonSchema,
     derive_more::Display,
     opendds_derive::OpenDd,
@@ -147,7 +148,7 @@ impl JsonSchema for TypeReference {
     }
 
     // TODO: Add description / examples to the json schema
-    fn json_schema(_gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(_gen: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         schemars::schema::Schema::Object(schemars::schema::SchemaObject {
             metadata: Some(Box::new(schemars::schema::Metadata {
                 title: Some(Self::schema_name()),
@@ -164,9 +165,9 @@ impl JsonSchema for TypeReference {
 
 #[derive(Hash, Clone, Debug, PartialEq, Eq, derive_more::Display)]
 pub enum BaseType {
-    #[display(fmt = "{_0}")]
+    #[display("{_0}")]
     Named(TypeName),
-    #[display(fmt = "[{_0}]")]
+    #[display("[{_0}]")]
     List(Box<TypeReference>),
 }
 
@@ -176,8 +177,8 @@ impl JsonSchema for BaseType {
     }
 
     // TODO: Add description / examples to the json schema
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        String::json_schema(gen)
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        String::json_schema(generator)
     }
 }
 
@@ -210,7 +211,19 @@ impl<'de> Deserialize<'de> for BaseType {
 }
 
 #[derive(
-    Serialize, Deserialize, Hash, Clone, Debug, PartialEq, Eq, JsonSchema, derive_more::Display,
+    Serialize,
+    Deserialize,
+    Hash,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    JsonSchema,
+    strum_macros::EnumIter,
+    derive_more::Display,
 )]
 #[schemars(title = "InbuiltType")]
 /// An inbuilt primitive OpenDD type.
@@ -627,6 +640,7 @@ impl ObjectBooleanExpressionType {
 #[derive(Serialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[opendd(json_schema(title = "ComparableField"))]
+/// A field of an object type that can be used for comparison when evaluating a boolean expression.
 pub struct ComparableField {
     pub field_name: FieldName,
     pub operators: EnableAllOrSpecific<OperatorName>,
@@ -681,6 +695,7 @@ pub struct Deprecated {
 
 impl_OpenDd_default_for!(Deprecated);
 
+/// Configuration for apollo federation related types and directives.
 #[derive(Serialize, Clone, Debug, PartialEq, JsonSchema, opendds_derive::OpenDd, Eq)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -689,6 +704,7 @@ pub struct ObjectApolloFederationConfig {
     pub keys: Vec<ApolloFederationObjectKey>,
 }
 
+/// The definition of a key for an apollo federation object.
 #[derive(Serialize, Clone, Debug, PartialEq, JsonSchema, opendds_derive::OpenDd, Eq)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -697,6 +713,7 @@ pub struct ApolloFederationObjectKey {
     pub fields: Vec<FieldName>,
 }
 
+/// The definition of an argument for a field in a user-defined object type.
 #[derive(Serialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[opendd(json_schema(title = "FieldArgumentDefinition"))]

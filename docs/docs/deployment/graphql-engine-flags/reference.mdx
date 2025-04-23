@@ -958,6 +958,19 @@ Each connection's idle time, measured in seconds, before it's closed.
 | **Default**         | `180`                                                  |
 | **Supported in**    | Deprecated in versions > `v2.0.0`                      |
 
+### Preserve 401 Errors
+
+Preserves HTTP 401 (Unauthorized) status codes from webhook auth responses and JWT auth failures. By default, all GraphQL errors are returned with HTTP status code 200, even authentication errors. When enabled, 401 errors will be propagated back to the client.
+
+|                     |                                                  |
+| ------------------- | ------------------------------------------------ |
+| **Flag**            | `--preserve-401-errors`                          |
+| **Env var**         | `HASURA_GRAPHQL_PRESERVE_401_ERRORS`             |
+| **Accepted values** | Boolean                                          |
+| **Options**         | `true` or `false`                                |
+| **Default**         | `false`                                          |
+| **Supported in**    | CE, Enterprise Edition                           |
+
 ### Query Plan Cache Size
 
 :::warning Notice
@@ -1045,6 +1058,21 @@ The timeout for redis queries while serving requests. The timeout is in seconds.
 | **Accepted values** | Integer (Representing an interval in seconds) |
 | **Default**         | `null` (No timeout)                           |
 | **Supported in**    | Enterprise Edition only                       |
+
+### Redis no-fail on Startup
+
+Whether to proceed if redis is unavailable at engine startup. If set to `true` and there are issues with redis on
+startup then the server will start as though caching and rate limiting were disabled until the next engine restart. A
+startup log message will be displayed in this case mentioning "redis operation failed".
+
+|                     |                                           |
+| ------------------- | ----------------------------------------- |
+| **Flag**            | `--redis-no-fail-on-startup`              |
+| **Env var**         | `HASURA_GRAPHQL_REDIS_NO_FAIL_ON_STARTUP` |
+| **Accepted values** | Boolean                                   |
+| **Options**         | `true` or `false`                         |
+| **Default**         | `false`                                   |
+| **Supported in**    | Enterprise Edition only                   |
 
 ### Redis TLS Hostname
 
@@ -1345,7 +1373,7 @@ Used to set the connection initialization timeout for GraphQL subscription proto
 
 ### Websocket Keepalive
 
-Used to set the `Keep Alive` delay for clients that use the `subscription-transport-ws` (Apollo) protocol. For
+Used to set the `Keep Alive` delay for clients that use the `subscriptions-transport-ws` (Apollo) protocol. For
 `graphql-ws` clients, the `graphql-engine` sends `PING` messages instead.
 
 |                     |                                           |

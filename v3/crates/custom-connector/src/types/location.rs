@@ -1,8 +1,10 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use ndc_models;
 
 use crate::arguments::argument_string;
+
+use datafusion::arrow::datatypes::Field;
 
 pub(crate) fn definition() -> ndc_models::ObjectType {
     ndc_models::ObjectType {
@@ -29,6 +31,14 @@ pub(crate) fn definition() -> ndc_models::ObjectType {
                 },
             ),
             (
+                "country_id".into(),
+                ndc_models::ObjectField {
+                    description: Some("The location's country ID".into()),
+                    r#type: ndc_models::Type::Named { name: "Int".into() },
+                    arguments: BTreeMap::new(),
+                },
+            ),
+            (
                 "campuses".into(),
                 ndc_models::ObjectField {
                     description: Some("The location's campuses".into()),
@@ -41,5 +51,28 @@ pub(crate) fn definition() -> ndc_models::ObjectType {
                 },
             ),
         ]),
+        foreign_keys: BTreeMap::new(),
     }
+}
+
+pub(crate) fn arrow_type() -> datafusion::arrow::datatypes::DataType {
+    datafusion::arrow::datatypes::DataType::Struct(datafusion::arrow::datatypes::Fields::from(
+        vec![
+            Field::new("city", datafusion::arrow::datatypes::DataType::Utf8, true),
+            Field::new(
+                "country",
+                datafusion::arrow::datatypes::DataType::Utf8,
+                true,
+            ),
+            Field::new(
+                "campuses",
+                datafusion::arrow::datatypes::DataType::List(Arc::new(Field::new(
+                    "item",
+                    datafusion::arrow::datatypes::DataType::Utf8,
+                    true,
+                ))),
+                true,
+            ),
+        ],
+    ))
 }

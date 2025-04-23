@@ -11,7 +11,6 @@ use crate::types::{GraphQlFieldName, GraphQlTypeName};
 #[serde(tag = "version", content = "definition")]
 #[serde(rename_all = "camelCase")]
 #[opendd(as_versioned_with_definition, json_schema(title = "GraphqlConfig"))]
-
 /// GraphqlConfig object tells us two things:
 ///
 /// 1. How the Graphql schema should look like for the features (`where`, `order_by` etc) Hasura provides
@@ -30,6 +29,7 @@ pub enum GraphqlConfig {
 pub struct GraphqlConfigV1 {
     pub query: QueryGraphqlConfig,
     pub mutation: MutationGraphqlConfig,
+    pub subscription: Option<SubscriptionGraphqlConfig>,
     pub apollo_federation: Option<GraphqlApolloFederationConfig>,
 }
 
@@ -154,6 +154,7 @@ pub enum OrderByDirection {
     Desc,
 }
 
+/// Type name for a sort directions enum, with the given set of possible directions.
 #[derive(Serialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[opendd(json_schema(title = "OrderByEnumTypeName"))]
@@ -171,6 +172,15 @@ pub struct MutationGraphqlConfig {
     pub root_operation_type_name: GraphQlTypeName,
 }
 
+/// Configuration for the GraphQL schema of Hasura features for subscriptions.
+#[derive(Serialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
+#[serde(rename_all = "camelCase")]
+#[opendd(json_schema(title = "SubscriptionGraphqlConfig"))]
+pub struct SubscriptionGraphqlConfig {
+    /// The name of the root operation type name for subscriptions. Usually `subscription`.
+    pub root_operation_type_name: GraphQlTypeName,
+}
+
 /// Configuration for the GraphQL schema of Hasura features for Apollo Federation.
 #[derive(Serialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +191,7 @@ pub struct GraphqlApolloFederationConfig {
     pub enable_root_fields: bool,
 }
 
+/// Configuration for the GraphQL schema for aggregates.
 #[derive(Serialize, Clone, Debug, PartialEq, opendds_derive::OpenDd)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]

@@ -8,27 +8,35 @@ license.workspace = true
 bench = false
 
 [dependencies]
+error-context = { path = "../utils/error-context" }
 hasura-authn-core = { path = "../auth/hasura-authn-core" }
-lang-graphql = { path = "../lang-graphql" }
+jsonpath = { path = "../utils/jsonpath" }
+json-annotation-parse = { path = "../utils/json-annotation-parse/" }
+lang-graphql = { path = "../graphql/lang-graphql" }
 open-dds = { path = "../open-dds" }
+serde-ext = { path = "../utils/serde-ext" }
 
-indexmap = { workspace = true, features = ["serde"] }
+ariadne = { workspace = true }
+derive_more = { workspace = true }
+indexmap = { workspace = true }
 ndc-models = { workspace = true }
 ndc-models-v01 = { workspace = true }
 nonempty = { workspace = true }
+partition_eithers = { workspace = true }
 ref-cast = { workspace = true }
-reqwest = { workspace = true, features = ["json", "multipart"] }
+reqwest = { workspace = true }
 semver = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
-insta = { workspace = true, features = ["glob"] }
+insta = { workspace = true }
 
 [lints]
 workspace = true

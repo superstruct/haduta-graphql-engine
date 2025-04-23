@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use axum::{http::StatusCode, Json};
+use axum::{Json, http::StatusCode};
 use ndc_models;
 
 use crate::{query::Result, state::AppState};
@@ -30,7 +30,7 @@ pub(crate) fn get_procedures() -> Vec<ndc_models::ProcedureInfo> {
 pub(crate) fn execute_procedure(
     name: &ndc_models::ProcedureName,
     arguments: &BTreeMap<ndc_models::ArgumentName, serde_json::Value>,
-    fields: &Option<ndc_models::NestedField>,
+    fields: Option<&ndc_models::NestedField>,
     collection_relationships: &BTreeMap<ndc_models::RelationshipName, ndc_models::Relationship>,
     state: &mut AppState,
 ) -> Result<serde_json::Value> {
@@ -43,13 +43,13 @@ pub(crate) fn execute_procedure(
             uppercase_actor_name_by_id::execute(arguments, fields, collection_relationships, state)
         }
         "uppercase_all_actor_names" => {
-            uppercase_all_actor_names::execute(fields, collection_relationships, state)
+            uppercase_all_actor_names::execute(arguments, fields, collection_relationships, state)
         }
         "uppercase_all_actor_names_return_names_list" => {
-            uppercase_all_actor_names_return_names_list::execute(state)
+            uppercase_all_actor_names_return_names_list::execute(arguments, state)
         }
         "login" => login::execute(arguments),
-        "noop_procedure" => Ok(noop_procedure::execute()),
+        "noop_procedure" => noop_procedure::execute(arguments),
         "add_movie_with_genres" => {
             add_movie_with_genres::execute(arguments, fields, collection_relationships, state)
         }
