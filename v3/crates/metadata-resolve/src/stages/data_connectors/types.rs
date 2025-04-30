@@ -607,6 +607,22 @@ pub struct DataConnectorRelationalJoinTypeCapabilities {
     #[serde(default = "serde_ext::ser_default")]
     #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub supports_full: bool,
+
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub supports_left_semi: bool,
+
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub supports_left_anti: bool,
+
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub supports_right_semi: bool,
+
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub supports_right_anti: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -716,6 +732,10 @@ pub struct DataConnectorRelationalScalarExpressionCapabilities {
 
     #[serde(default = "serde_ext::ser_default")]
     #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub supports_array_element: bool,
+
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub supports_btrim: bool,
 
     #[serde(default = "serde_ext::ser_default")]
@@ -761,6 +781,10 @@ pub struct DataConnectorRelationalScalarExpressionCapabilities {
     #[serde(default = "serde_ext::ser_default")]
     #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
     pub supports_floor: bool,
+
+    #[serde(default = "serde_ext::ser_default")]
+    #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
+    pub supports_get_field: bool,
 
     #[serde(default = "serde_ext::ser_default")]
     #[serde(skip_serializing_if = "serde_ext::is_ser_default")]
@@ -1187,6 +1211,10 @@ fn mk_ndc_02_capabilities(
                             supports_right: c.join_types.right.is_some(),
                             supports_inner: c.join_types.inner.is_some(),
                             supports_full: c.join_types.full.is_some(),
+                            supports_left_semi: c.join_types.left_semi.is_some(),
+                            supports_left_anti: c.join_types.left_anti.is_some(),
+                            supports_right_semi: c.join_types.right_semi.is_some(),
+                            supports_right_anti: c.join_types.right_anti.is_some(),
                         },
                     }),
                 supports_aggregate: r.aggregate.as_ref().map(|c| {
@@ -1236,6 +1264,7 @@ fn mk_relational_expression_capabilities(
             },
             supports_scalar: DataConnectorRelationalScalarExpressionCapabilities {
                 supports_abs: capabilities.scalar.abs.is_some(),
+                supports_array_element: capabilities.scalar.array_element.is_some(),
                 supports_btrim: capabilities.scalar.btrim.is_some(),
                 supports_ceil: capabilities.scalar.ceil.is_some(),
                 supports_character_length: capabilities.scalar.character_length.is_some(),
@@ -1264,6 +1293,7 @@ fn mk_relational_expression_capabilities(
                 supports_date_trunc: capabilities.scalar.date_trunc.is_some(),
                 supports_exp: capabilities.scalar.exp.is_some(),
                 supports_floor: capabilities.scalar.floor.is_some(),
+                supports_get_field: capabilities.scalar.get_field.is_some(),
                 supports_greatest: capabilities.scalar.greatest.is_some(),
                 supports_least: capabilities.scalar.least.is_some(),
                 supports_left: capabilities.scalar.left.is_some(),
